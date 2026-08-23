@@ -516,7 +516,20 @@ class FishingBotApp:
         self.reaction_slider.set(current_reaction)
         self.reaction_slider.pack(fill="x")
 
-        # 4. Template Match (20% - 99%)
+        # 4. Max Sinking Timeout (5.0 - 90.0 s)
+        current_sink = float(self.config.get("timings", {}).get("sinking_timeout_sec", 32.5) or 32.5)
+        self.sinking_val_lbl = tk.Label(s1, text=f"🌊 Max Sinking Timeout: {current_sink:.1f} s", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
+        self.sinking_val_lbl.pack(anchor="w")
+
+        self.sinking_slider = tk.Scale(
+            s1, from_=5.0, to=90.0, orient="horizontal", resolution=0.5, showvalue=False,
+            bg=ModernColors.CARD_BG, fg=ModernColors.TEXT_MAIN, troughcolor=ModernColors.BORDER, highlightthickness=0,
+            command=self.on_sinking_slider_change
+        )
+        self.sinking_slider.set(current_sink)
+        self.sinking_slider.pack(fill="x")
+
+        # 5. Template Match (20% - 99%)
         current_tpl_score = int(self.config.get("thresholds", {}).get("hold_template_match_threshold", 0.65) * 100)
         self.tpl_val_lbl = tk.Label(s1, text=f"🎯 Template Match: {current_tpl_score}%", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.tpl_val_lbl.pack(anchor="w")
@@ -681,6 +694,9 @@ class FishingBotApp:
             self.config["rod_stats"]["depth"] = d
             self.config["rod_stats"]["strength"] = s
             self.config["timings"]["reel_hold_duration_sec"] = calc_sec
+            self.config["timings"]["sinking_timeout_sec"] = calc_sink
+            self.sinking_slider.set(calc_sink)
+            self.sinking_val_lbl.config(text=f"🌊 Max Sinking Timeout: {calc_sink:.1f} s")
             self.save_config()
         except:
             pass
@@ -701,6 +717,19 @@ class FishingBotApp:
         val_i = int(val)
         self.reaction_val_lbl.config(text=f"🐟 Reaction Delay: {val_i} ms")
         self.config["timings"]["bite_reaction_delay_ms"] = val_i
+        self.save_config()
+
+    def on_sinking_slider_change(self, val):
+        val_f = round(float(val), 1)
+        self.sinking_val_lbl.config(text=f"🌊 Max Sinking Timeout: {val_f:.1f} s")
+        self.config["timings"]["sinking_timeout_sec"] = val_f
+        try:
+            d = float(self.depth_entry.get() or 330)
+            s = float(self.str_entry.get() or 146)
+            calc_sec = round((d / max(1.0, s)) * 1.65 + 0.5, 1)
+            self.calc_time_lbl.config(text=f"⚡ {calc_sec}s | 🌊 {val_f:.1f}s")
+        except:
+            pass
         self.save_config()
 
     def on_tpl_slider_change(self, val):
@@ -725,6 +754,7 @@ class FishingBotApp:
             self.config["timings"]["min_charge_gate_ms"] = 450
             self.config["timings"]["recast_delay_sec"] = 1.9
             self.config["timings"]["bite_reaction_delay_ms"] = 350
+            self.config["timings"]["sinking_timeout_sec"] = 32.5
             self.config["thresholds"]["hold_template_match_threshold"] = 0.65
             self.config["thresholds"]["modal_continue_score"] = 0.70
             self.config["thresholds"]["inventory_red_ratio"] = 0.04
@@ -748,6 +778,7 @@ class FishingBotApp:
             self.gate_slider.set(450)
             self.recast_slider.set(1.9)
             self.reaction_slider.set(350)
+            self.sinking_slider.set(32.5)
             self.tpl_slider.set(65)
             self.var_interrupt.set(True)
             self.var_inv_full.set(True)

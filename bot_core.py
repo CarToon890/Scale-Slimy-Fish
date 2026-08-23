@@ -189,11 +189,8 @@ class FishingBot:
         return override if override is not None else max(3.0, calc_duration)
 
     def calculate_sinking_timeout(self):
-        rod = self.config.get("rod_stats", {"depth": 330, "strength": 146})
-        depth = float(rod.get("depth", 330))
         base_timeout = float(self.config.get("timings", {}).get("sinking_timeout_sec", 18.0) or 18.0)
-        calc_timeout = round(max(base_timeout, (depth / 12.0) + 5.0), 1)
-        return calc_timeout
+        return round(base_timeout, 1)
 
     def reload_config(self):
         self.detector.config = self.detector.load_config()
