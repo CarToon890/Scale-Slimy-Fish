@@ -57,7 +57,7 @@
   },
   "timings": {
     "idle_delay_sec": 0.4,
-    "min_charge_gate_ms": 650,
+    "min_charge_gate_ms": 600,
     "charge_backup_sec": 1.4,
     "cast_poll_interval_sec": 0.005,
     "cast_settle_delay_sec": 1.0,
@@ -67,7 +67,7 @@
     "reeling_cancel_extension_sec": 2.5,
     "jitter_interval_ms": 120,
     "debounce_frames": 3,
-    "recast_delay_sec": 5.5,
+    "recast_delay_sec": 3.5,
     "scan_interval_sec": 0.025,
     "anti_afk_interval_sec": 120.0
   },

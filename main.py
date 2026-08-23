@@ -26,7 +26,7 @@ import numpy as np
 from PIL import Image, ImageTk
 from bot_core import FishingBot, BotState, InputSimulator
 
-# Enable DPI Awareness & 1ms Timer Resolution at startup
+# Enable DPI Awareness at startup
 if sys.platform == "win32":
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -35,10 +35,6 @@ if sys.platform == "win32":
             ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
-    try:
-        ctypes.windll.winmm.timeBeginPeriod(1)
-    except Exception:
-        pass
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
@@ -903,11 +899,6 @@ class FishingBotApp:
             keyboard.unhook_all_hotkeys()
         except:
             pass
-        if sys.platform == "win32":
-            try:
-                ctypes.windll.winmm.timeEndPeriod(1)
-            except:
-                pass
         self.root.destroy()
 
 

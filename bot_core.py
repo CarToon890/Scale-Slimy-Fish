@@ -21,7 +21,7 @@ import traceback
 from enum import Enum
 from vision import VisionDetector
 
-# Set DPI awareness and 1ms high-resolution timer
+# Set DPI awareness
 if sys.platform == "win32":
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -30,10 +30,6 @@ if sys.platform == "win32":
             ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
-    try:
-        ctypes.windll.winmm.timeBeginPeriod(1)
-    except Exception:
-        pass
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
@@ -132,7 +128,6 @@ class FishingBot:
 
         self.consecutive_sinking_timeouts = 0
         self.last_anti_afk_time = time.time()
-        self.last_progress_time = 0.0
 
     def log(self, message):
         timestamp = time.strftime("%H:%M:%S")
@@ -150,12 +145,9 @@ class FishingBot:
         if self.state_callback:
             self.state_callback(new_state)
 
-    def set_progress(self, percent: float, sub_msg: str = "", force: bool = False):
-        now = time.perf_counter()
-        if force or percent >= 100.0 or percent <= 0.0 or (now - self.last_progress_time) >= 0.040:
-            self.last_progress_time = now
-            if self.progress_callback:
-                self.progress_callback(percent, sub_msg)
+    def set_progress(self, percent: float, sub_msg: str = ""):
+        if self.progress_callback:
+            self.progress_callback(percent, sub_msg)
 
     def update_stats(self):
         if self.stats["start_time"]:
@@ -366,7 +358,6 @@ class FishingBot:
                 self.log(f"🌊 [State 2: Sinking] สายเบ็ดกำลังจมลงสู่ใต้ทะเล (Depth: {depth_val}m | Timeout: {sinking_timeout}s)...")
                 
                 start_sink = time.time()
-                last_interrupt_check = 0.0
                 hooked = False
                 last_score = 0.0
 
@@ -374,13 +365,10 @@ class FishingBot:
                     if not self.is_running:
                         break
 
-                    # Check Global Interrupt periodically (every 1.5s) to maximize loop FPS
-                    now_ts = time.time()
-                    if now_ts - last_interrupt_check > 1.5:
-                        last_interrupt_check = now_ts
-                        if self.check_global_interrupt():
-                            if not self.is_running:
-                                break
+                    # Check Global Interrupt during sinking
+                    if self.check_global_interrupt():
+                        if not self.is_running:
+                            break
 
                     elapsed_sink = time.time() - start_sink
                     sink_pct = min(100.0, (elapsed_sink / sinking_timeout) * 100.0)
