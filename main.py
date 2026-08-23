@@ -445,7 +445,7 @@ class FishingBotApp:
         # 1. Rod Calculator Compact Card
         rod_card = tk.LabelFrame(
             self.tab_monitor,
-            text=" 🎣 สเปกคันเบ็ด (Rod Physics) ",
+            text=" 🎣 สเปกคันเบ็ด & กระเป๋า (Rod & Bag Stats) ",
             font=("Segoe UI", 8, "bold"),
             fg=ModernColors.ACCENT_PURPLE,
             bg=ModernColors.CARD_BG,
@@ -458,18 +458,25 @@ class FishingBotApp:
         r_row.pack(fill="x")
 
         tk.Label(r_row, text="Depth:", font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left")
-        self.depth_entry = tk.Entry(r_row, width=5, bg="#11111b", fg=ModernColors.ACCENT_YELLOW, insertbackground="white", font=("Segoe UI", 8, "bold"))
+        self.depth_entry = tk.Entry(r_row, width=4, bg="#11111b", fg=ModernColors.ACCENT_YELLOW, insertbackground="white", font=("Segoe UI", 8, "bold"))
         current_depth = self.config.get("rod_stats", {}).get("depth", 330)
         self.depth_entry.insert(0, str(current_depth))
-        self.depth_entry.pack(side="left", padx=(1, 4))
+        self.depth_entry.pack(side="left", padx=(1, 3))
         self.depth_entry.bind("<KeyRelease>", self.on_rod_stat_change)
 
         tk.Label(r_row, text="Str:", font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left")
-        self.str_entry = tk.Entry(r_row, width=4, bg="#11111b", fg=ModernColors.ACCENT_GREEN, insertbackground="white", font=("Segoe UI", 8, "bold"))
+        self.str_entry = tk.Entry(r_row, width=3, bg="#11111b", fg=ModernColors.ACCENT_GREEN, insertbackground="white", font=("Segoe UI", 8, "bold"))
         current_str = self.config.get("rod_stats", {}).get("strength", 146)
         self.str_entry.insert(0, str(current_str))
-        self.str_entry.pack(side="left", padx=(1, 4))
+        self.str_entry.pack(side="left", padx=(1, 3))
         self.str_entry.bind("<KeyRelease>", self.on_rod_stat_change)
+
+        tk.Label(r_row, text="Cap:", font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left")
+        self.cap_entry = tk.Entry(r_row, width=3, bg="#11111b", fg=ModernColors.ACCENT_BLUE, insertbackground="white", font=("Segoe UI", 8, "bold"))
+        current_cap = self.config.get("rod_stats", {}).get("capacity", 10)
+        self.cap_entry.insert(0, str(current_cap))
+        self.cap_entry.pack(side="left", padx=(1, 3))
+        self.cap_entry.bind("<KeyRelease>", self.on_rod_stat_change)
 
         calc_sec = round((float(current_depth) / max(1.0, float(current_str))) * 1.65 + 0.5, 1)
         calc_sink = round(max(18.0, (float(current_depth) / 12.0) + 5.0), 1)
@@ -951,6 +958,7 @@ class FishingBotApp:
         try:
             d = float(self.depth_entry.get() or 330)
             s = float(self.str_entry.get() or 146)
+            c = int(self.cap_entry.get() or 10)
             calc_sec = round((d / max(1.0, s)) * 1.65 + 0.5, 1)
             calc_sink = round(max(18.0, (d / 12.0) + 5.0), 1)
             self.calc_time_lbl.config(text=f"⚡ {calc_sec}s | 🌊 {calc_sink}s")
@@ -958,6 +966,7 @@ class FishingBotApp:
                 self.config["rod_stats"] = {}
             self.config["rod_stats"]["depth"] = d
             self.config["rod_stats"]["strength"] = s
+            self.config["rod_stats"]["capacity"] = c
             self.config["timings"]["reel_hold_duration_sec"] = calc_sec
             self.config["timings"]["sinking_timeout_sec"] = calc_sink
             self.reeling_slider.set(calc_sec)
@@ -965,6 +974,7 @@ class FishingBotApp:
             self.sinking_slider.set(calc_sink)
             self.sinking_val_lbl.config(text=f"🌊 Max Sinking Timeout: {calc_sink:.1f} s")
             self.save_config()
+            self.update_stats_display(self.bot.stats)
         except:
             pass
 
@@ -1066,6 +1076,14 @@ class FishingBotApp:
             self.var_double_check.set(True)
             self.var_lightning.set(True)
             self.var_failsafe.set(True)
+            if "rod_stats" not in self.config:
+                self.config["rod_stats"] = {}
+            self.config["rod_stats"]["capacity"] = 10
+            if hasattr(self, "cap_entry"):
+                self.cap_entry.delete(0, tk.END)
+                self.cap_entry.insert(0, "10")
+            self.save_config()
+            self.update_stats_display(self.bot.stats)
             messagebox.showinfo("สำเร็จ", "รีเซ็ตค่ามาตรฐานเรียบร้อยแล้ว!")
 
     def open_template_capture_selector(self):
@@ -1232,11 +1250,17 @@ class FishingBotApp:
             perfect = stats.get('perfect_casts', 0)
             uptime = stats.get('uptime_seconds', 0)
 
-            fish_pct = int(round((fish / max(1, casts)) * 100.0)) if casts > 0 else 0
+            capacity = int(self.config.get("rod_stats", {}).get("capacity", 10) or 10)
+            fish_pct = int(round((fish / max(1, capacity)) * 100.0)) if capacity > 0 else 0
             perf_pct = int(round((perfect / max(1, casts)) * 100.0)) if casts > 0 else 0
 
             self.lbl_casts.config(text=f"🎣 {casts}")
-            self.lbl_fish.config(text=f"🐟 {fish} ({fish_pct}%)")
+            
+            if capacity > 0 and fish >= capacity:
+                self.lbl_fish.config(text=f"🐟 {fish}/{capacity} (เต็ม!)", fg=ModernColors.ACCENT_RED)
+            else:
+                self.lbl_fish.config(text=f"🐟 {fish}/{capacity} ({fish_pct}%)", fg=ModernColors.ACCENT_GREEN)
+
             self.lbl_perfect.config(text=f"✨ {perfect} ({perf_pct}%)")
 
             if hasattr(self, "lbl_perfect_pct"):

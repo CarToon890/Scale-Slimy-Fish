@@ -53,7 +53,8 @@
   },
   "rod_stats": {
     "depth": 380.0,
-    "strength": 117.0
+    "strength": 117.0,
+    "capacity": 10
   },
   "timings": {
     "idle_delay_sec": 0.4,

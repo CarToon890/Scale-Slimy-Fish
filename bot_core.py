@@ -608,6 +608,15 @@ class FishingBot:
                     self.set_progress(pct, f"คลิกข้ามการ์ดปลาแล้ว -> เตรียมเหวี่ยงเบ็ด: {remain:.1f}s...")
                     time.sleep(0.05)
 
+                # Check Capacity limit
+                cap_limit = int(self.config.get("rod_stats", {}).get("capacity", 0) or 0)
+                if cap_limit > 0 and self.stats["fish_caught"] >= cap_limit and features.get("inventory_full_detection", True):
+                    self.log(f"🎒 [Capacity Limit] ตกปลาครบความจุกระเป๋า ({self.stats['fish_caught']}/{cap_limit} ตัว) แล้ว! หยุดการทำงานชั่วคราวเพื่อให้ผู้เล่นไปเทกระเป๋า")
+                    self.set_state(BotState.PAUSED_INVENTORY_FULL)
+                    self.set_progress(0, f"🚨 กระเป๋าเต็ม: ตกครบ {cap_limit} ตัวแล้ว (กรุณาเทกระเป๋า)")
+                    self.stop(reason="CAPACITY_FULL")
+                    break
+
         except Exception as e:
             err_msg = traceback.format_exc()
             self.log(f"❌ เกิดข้อผิดพลาดในการทำงาน: {e}")
