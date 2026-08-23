@@ -90,7 +90,7 @@
     "flash_brightness_threshold": 235
   },
   "features": {
-    "global_interrupt_enabled": false,
+    "global_interrupt_enabled": true,
     "inventory_full_detection": true,
     "cancel_extension_enabled": true,
     "anti_afk_enabled": true,

@@ -1,7 +1,8 @@
 """
 Compact Side-Panel GUI Application for Scale Slimy Fish Auto Fishing Bot.
-Optimized for Side-by-Side Gaming (440x680px) with:
+Optimized for Side-by-Side Gaming (460x720px) with:
 - Always on Top (ปักหมุดลอยบนจอคู่กับ Roblox)
+- Template Inspector & Quality Verification Modal (ซูมดูภาพและตรวจสอบความชัดเจน 100% ก่อนบันทึก)
 - Auto Window Focus on F6 / Start (เลื่อนไป Safe Zone และคลิกซ้าย 1 ครั้งเพื่อโฟกัสหน้าต่างเกมก่อนเริ่ม)
 - Live Camera Computer Vision HUD Annotations (วาดกรอบตรวจจับในช่องกล้องสด)
 - Real-Time Live Rod Status LED (🔴 เบ็ดในน้ำ / 🟢 ถือเบ็ดบนบก)
@@ -14,7 +15,8 @@ Optimized for Side-by-Side Gaming (440x680px) with:
 - Dual Live Camera Monitors (Power Bar & Hold Text)
 - Dynamic Rod Calculator (Depth & Strength)
 - Full Advanced Settings Tab (Sliders & Safety Switches)
-- Live Telemetry Logs
+- Live Session Analytics Dashboard (Fish/Hr, Perfect%, Avg Time)
+- Live Mini-Log Console
 """
 
 import sys
@@ -62,6 +64,89 @@ class ModernColors:
     TEXT_MUTED = "#a6adc8"
     BORDER = "#313244"
     PREVIEW_BG = "#11111b"
+
+
+class TemplateInspectorDialog(tk.Toplevel):
+    """
+    High-Definition Zoomed Template Inspector Modal Dialog.
+    Allows user to verify capture quality, sharpness, and dimensions before saving.
+    """
+    def __init__(self, parent, template_name, crop_bgr, on_save, on_recapture):
+        super().__init__(parent)
+        self.template_name = template_name
+        self.crop_bgr = crop_bgr
+        self.on_save = on_save
+        self.on_recapture = on_recapture
+        self.title(f"🔍 ตรวจสอบแม่แบบ: {template_name}")
+        self.geometry("460x380")
+        self.minsize(440, 360)
+        self.configure(bg=ModernColors.BG_DARK)
+        self.attributes("-topmost", True)
+        self.grab_set()
+
+        # 1. Header
+        h = tk.Frame(self, bg=ModernColors.CARD_BG, padx=10, pady=8)
+        h.pack(fill="x", padx=10, pady=(10, 4))
+        tk.Label(h, text="🔍 ตรวจสอบความชัดเจนของแม่แบบ", font=("Segoe UI", 11, "bold"), fg=ModernColors.ACCENT_BLUE, bg=ModernColors.CARD_BG).pack(anchor="w")
+        tk.Label(h, text=f"เป้าหมาย: {template_name}", font=("Segoe UI", 8), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG).pack(anchor="w")
+
+        # 2. Zoomed Image Box
+        img_box = tk.Frame(self, bg="#11111b", padx=10, pady=10, relief="solid", bd=1)
+        img_box.pack(fill="both", expand=True, padx=10, pady=4)
+
+        h_c, w_c = crop_bgr.shape[:2]
+        max_box_w = 400
+        max_box_h = 160
+        zoom = max(1.0, min(max_box_w / max(1, w_c), max_box_h / max(1, h_c), 3.5))
+        disp_w = max(20, int(w_c * zoom))
+        disp_h = max(20, int(h_c * zoom))
+
+        resized = cv2.resize(crop_bgr, (disp_w, disp_h), interpolation=cv2.INTER_NEAREST if zoom >= 2 else cv2.INTER_AREA)
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        self.photo = ImageTk.PhotoImage(Image.fromarray(rgb))
+
+        self.img_lbl = tk.Label(img_box, image=self.photo, bg="#11111b")
+        self.img_lbl.pack(expand=True)
+
+        # 3. Meta Info Row
+        info_row = tk.Frame(self, bg=ModernColors.CARD_BG, padx=10, pady=4)
+        info_row.pack(fill="x", padx=10, pady=2)
+        tk.Label(info_row, text=f"📐 ขนาดภาพ: {w_c} x {h_c} px (ซูม {zoom:.1f}x)", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_YELLOW, bg=ModernColors.CARD_BG).pack(side="left")
+        
+        quality_msg = "🟢 คุณภาพดีเยี่ยม" if w_c >= 20 and h_c >= 10 else "⚠️ ขนาดเล็กเกินไป"
+        tk.Label(info_row, text=quality_msg, font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_GREEN if "ดีเยี่ยม" in quality_msg else ModernColors.ACCENT_RED, bg=ModernColors.CARD_BG).pack(side="right")
+
+        # 4. Action Buttons
+        btn_row = tk.Frame(self, bg=ModernColors.BG_DARK, padx=10, pady=6)
+        btn_row.pack(fill="x", padx=10, pady=(2, 10))
+
+        tk.Button(
+            btn_row, text="✅ บันทึกและใช้งาน (Save)", font=("Segoe UI", 9, "bold"),
+            bg="#238636", fg="white", activebackground="#2ea043", relief="flat", pady=6, cursor="hand2",
+            command=self._save
+        ).pack(side="left", fill="x", expand=True, padx=(0, 3))
+
+        tk.Button(
+            btn_row, text="🔄 แคปใหม่ (Recapture)", font=("Segoe UI", 9, "bold"),
+            bg="#8957e5", fg="white", activebackground="#a371f7", relief="flat", pady=6, cursor="hand2",
+            command=self._recapture
+        ).pack(side="left", fill="x", expand=True, padx=3)
+
+        tk.Button(
+            btn_row, text="❌ ยกเลิก", font=("Segoe UI", 9),
+            bg=ModernColors.BORDER, fg=ModernColors.TEXT_MUTED, relief="flat", pady=6, cursor="hand2",
+            command=self.destroy
+        ).pack(side="right", fill="x", expand=True, padx=(3, 0))
+
+    def _save(self):
+        if self.on_save:
+            self.on_save(self.crop_bgr)
+        self.destroy()
+
+    def _recapture(self):
+        self.destroy()
+        if self.on_recapture:
+            self.on_recapture()
 
 
 class FullscreenFrozenSelector(tk.Toplevel):
@@ -168,8 +253,8 @@ class FishingBotApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Slimy Fish Bot")
-        self.root.geometry("440x680")
-        self.root.minsize(420, 600)
+        self.root.geometry("460x720")
+        self.root.minsize(440, 640)
         self.root.configure(bg=ModernColors.BG_DARK)
 
         self.config_path = "config.json"
@@ -404,7 +489,7 @@ class FishingBotApp:
             command=self.open_point_selector
         ).pack(side="right")
 
-        # 2. Dual Camera Monitors (Side-by-Side, compact height)
+        # 2. Dual Camera Monitors (Side-by-Side, High-Definition Preview ~200x120px)
         cam_frame = tk.Frame(self.tab_monitor, bg=ModernColors.BG_DARK)
         cam_frame.pack(fill="x", padx=4, pady=2)
 
@@ -420,8 +505,8 @@ class FishingBotApp:
         )
         c1.pack(side="left", fill="both", expand=True, padx=(0, 2))
 
-        self.img_lbl_pb = tk.Label(c1, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG, height=5)
-        self.img_lbl_pb.pack(fill="x", pady=1)
+        self.img_lbl_pb = tk.Label(c1, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG)
+        self.img_lbl_pb.pack(fill="both", expand=True, pady=1)
 
         self.status_lbl_pb = tk.Label(c1, text="⚪ สตรีมสด...", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG)
         self.status_lbl_pb.pack()
@@ -429,7 +514,7 @@ class FishingBotApp:
         tk.Button(
             c1, text="🎯 ลากกรอบเกจ", font=("Segoe UI", 7, "bold"),
             bg=ModernColors.BORDER, fg=ModernColors.ACCENT_GREEN, relief="flat",
-            command=lambda: self.open_roi_selector("Power Bar", "cast_bar_roi")
+            command=lambda: self.open_roi_selector("Power Bar (เกจพลังงาน)", "cast_bar_roi")
         ).pack(fill="x", pady=1)
 
         # Monitor 2: Hold to Fish & Continue
@@ -444,8 +529,8 @@ class FishingBotApp:
         )
         c2.pack(side="left", fill="both", expand=True, padx=(2, 0))
 
-        self.img_lbl_hold = tk.Label(c2, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG, height=5)
-        self.img_lbl_hold.pack(fill="x", pady=1)
+        self.img_lbl_hold = tk.Label(c2, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG)
+        self.img_lbl_hold.pack(fill="both", expand=True, pady=1)
 
         self.status_lbl_hold = tk.Label(c2, text="⚪ สตรีมสด...", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG)
         self.status_lbl_hold.pack()
@@ -526,7 +611,7 @@ class FishingBotApp:
             font=("Consolas", 7),
             relief="flat",
             wrap="word",
-            height=6
+            height=5
         )
         self.mini_log_text.pack(side="left", fill="both", expand=True)
 
@@ -706,13 +791,13 @@ class FishingBotApp:
         scrollbar.pack(side="right", fill="y")
         self.log_text.config(yscrollcommand=scrollbar.set)
 
-    def _render_thumb(self, frame, target_w=190, target_h=95):
+    def _render_thumb(self, frame, target_w=205, target_h=120):
         if frame is None or frame.size == 0:
             return None
         h, w = frame.shape[:2]
         scale = min(target_w / max(1, w), target_h / max(1, h))
         nw, nh = max(10, int(w * scale)), max(10, int(h * scale))
-        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA)
+        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         return ImageTk.PhotoImage(Image.fromarray(rgb))
 
@@ -748,8 +833,8 @@ class FishingBotApp:
                             cv2.rectangle(hold_display, (0, 0), (hold_display.shape[1]-1, hold_display.shape[0]-1), (0, 255, 255), 2)
                         cv2.putText(hold_display, "DETECTED", (4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
 
-                    thumb_pb = self._render_thumb(pb_display if pb_display is not None else pb_frame, 190, 95)
-                    thumb_hold = self._render_thumb(hold_display if hold_display is not None else hold_frame, 190, 95)
+                    thumb_pb = self._render_thumb(pb_display if pb_display is not None else pb_frame, 205, 120)
+                    thumb_hold = self._render_thumb(hold_display if hold_display is not None else hold_frame, 205, 120)
 
                     score_pct = int(hold_details.get("match_score", 0.0) * 100)
                     green_pct = int(pb_details.get("green_ratio", 0.0) * 100) if "green_ratio" in pb_details else int(pb_details.get("green_pixels", 0))
@@ -915,9 +1000,16 @@ class FishingBotApp:
         self.append_log("📸 แคปแม่แบบข้อความ 'Hold to fish'...")
         def _on_selected(roi_ratio, crop_bgr):
             if crop_bgr is not None and crop_bgr.size > 0:
-                self.bot.detector.save_hold_template(crop_bgr)
-                self.append_log("✨ บันทึกแม่แบบ template_hold.png สำเร็จ!")
-                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Hold to fish' เรียบร้อยแล้ว!")
+                def _do_save(img):
+                    self.bot.detector.save_hold_template(img)
+                    self.append_log("✨ บันทึกแม่แบบ template_hold.png สำเร็จ!")
+                    messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Hold to fish' เรียบร้อยแล้ว!")
+
+                TemplateInspectorDialog(
+                    self.root, "ข้อความ 'Hold to fish'", crop_bgr,
+                    on_save=_do_save,
+                    on_recapture=self.open_template_capture_selector
+                )
 
         FullscreenFrozenSelector(self.root, "ข้อความ 'Hold to fish' (ลากเฉพาะตัวหนังสือ)", mode="box", on_selected=_on_selected)
 
@@ -925,21 +1017,39 @@ class FishingBotApp:
         self.append_log("📸 แคปแม่แบบข้อความ 'Click to Continue'...")
         def _on_selected(roi_ratio, crop_bgr):
             if crop_bgr is not None and crop_bgr.size > 0:
-                self.bot.detector.save_continue_template(crop_bgr)
-                self.append_log("✨ บันทึกแม่แบบ template_continue.png สำเร็จ!")
-                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Click to Continue' เรียบร้อยแล้ว!")
+                def _do_save(img):
+                    self.bot.detector.save_continue_template(img)
+                    self.append_log("✨ บันทึกแม่แบบ template_continue.png สำเร็จ!")
+                    messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Click to Continue' เรียบร้อยแล้ว!")
+
+                TemplateInspectorDialog(
+                    self.root, "ข้อความ 'Click to Continue'", crop_bgr,
+                    on_save=_do_save,
+                    on_recapture=self.open_continue_capture_selector
+                )
 
         FullscreenFrozenSelector(self.root, "ข้อความ 'Click to Continue' (ลากเฉพาะตัวหนังสือ)", mode="box", on_selected=_on_selected)
 
     def open_roi_selector(self, label, config_key):
         self.append_log(f"🎯 เลือกพื้นที่: {label}...")
         def _on_selected(roi_ratio, crop_bgr):
-            if "screen" not in self.config:
-                self.config["screen"] = {}
-            self.config["screen"][config_key] = roi_ratio
-            self.config["screen"]["detection_mode"] = "manual"
-            self.save_config()
-            self.append_log(f"✅ บันทึก {config_key}: {roi_ratio}")
+            def _do_save(img):
+                if "screen" not in self.config:
+                    self.config["screen"] = {}
+                self.config["screen"][config_key] = roi_ratio
+                self.config["screen"]["detection_mode"] = "manual"
+                self.save_config()
+                self.append_log(f"✅ บันทึก {config_key}: {roi_ratio}")
+                messagebox.showinfo("สำเร็จ", f"บันทึกพื้นที่ {label} เรียบร้อยแล้ว!")
+
+            if crop_bgr is not None and crop_bgr.size > 0:
+                TemplateInspectorDialog(
+                    self.root, label, crop_bgr,
+                    on_save=_do_save,
+                    on_recapture=lambda: self.open_roi_selector(label, config_key)
+                )
+            else:
+                _do_save(None)
 
         FullscreenFrozenSelector(self.root, label, mode="box", on_selected=_on_selected)
 
