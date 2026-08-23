@@ -415,7 +415,7 @@ class FishingBotApp:
         self.lbl_casts = tk.Label(stats_mini, text="🎣 0", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.lbl_casts.pack(side="left", padx=(0, 4))
 
-        self.lbl_fish = tk.Label(stats_mini, text="🐟 0 (0%)", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_GREEN, bg=ModernColors.CARD_BG)
+        self.lbl_fish = tk.Label(stats_mini, text="🐟 0 ตัว", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_GREEN, bg=ModernColors.CARD_BG)
         self.lbl_fish.pack(side="left", padx=4)
 
         self.lbl_perfect = tk.Label(stats_mini, text="✨ 0 (0%)", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_YELLOW, bg=ModernColors.CARD_BG)
@@ -445,7 +445,7 @@ class FishingBotApp:
         # 1. Rod Calculator Compact Card
         rod_card = tk.LabelFrame(
             self.tab_monitor,
-            text=" 🎣 สเปกคันเบ็ด & กระเป๋า (Rod & Bag Stats) ",
+            text=" 🎣 สเปกคันเบ็ด (Rod Physics & Capacity) ",
             font=("Segoe UI", 8, "bold"),
             fg=ModernColors.ACCENT_PURPLE,
             bg=ModernColors.CARD_BG,
@@ -1250,17 +1250,10 @@ class FishingBotApp:
             perfect = stats.get('perfect_casts', 0)
             uptime = stats.get('uptime_seconds', 0)
 
-            capacity = int(self.config.get("rod_stats", {}).get("capacity", 10) or 10)
-            fish_pct = int(round((fish / max(1, capacity)) * 100.0)) if capacity > 0 else 0
             perf_pct = int(round((perfect / max(1, casts)) * 100.0)) if casts > 0 else 0
 
             self.lbl_casts.config(text=f"🎣 {casts}")
-            
-            if capacity > 0 and fish >= capacity:
-                self.lbl_fish.config(text=f"🐟 {fish}/{capacity} (เต็ม!)", fg=ModernColors.ACCENT_RED)
-            else:
-                self.lbl_fish.config(text=f"🐟 {fish}/{capacity} ({fish_pct}%)", fg=ModernColors.ACCENT_GREEN)
-
+            self.lbl_fish.config(text=f"🐟 {fish} ตัว", fg=ModernColors.ACCENT_GREEN)
             self.lbl_perfect.config(text=f"✨ {perfect} ({perf_pct}%)")
 
             if hasattr(self, "lbl_perfect_pct"):

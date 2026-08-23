@@ -558,9 +558,10 @@ class FishingBot:
                             time.sleep(scan_interval)
 
                     InputSimulator.mouse_up()
-                    self.stats["fish_caught"] += 1
+                    rod_cap = max(1, int(self.config.get("rod_stats", {}).get("capacity", 1) or 1))
+                    self.stats["fish_caught"] += rod_cap
                     self.update_stats()
-                    self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
+                    self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+{rod_cap} ตัว รวม {self.stats['fish_caught']} ตัว)")
 
                 else:
                     # ====================================================
@@ -576,9 +577,10 @@ class FishingBot:
                         time.sleep(0.4)
                         continue  # Loop back to STATE 1 immediately!
                     else:
-                        self.stats["fish_caught"] += 1
+                        rod_cap = max(1, int(self.config.get("rod_stats", {}).get("capacity", 1) or 1))
+                        self.stats["fish_caught"] += rod_cap
                         self.update_stats()
-                        self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบตามเวลา {reel_hold_duration:.1f}s (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
+                        self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบตามเวลา {reel_hold_duration:.1f}s (+{rod_cap} ตัว รวม {self.stats['fish_caught']} ตัว)")
 
                 # ====================================================
                 # STATE 4: LOOT & FAST RESET (1.9s Recast + Click-to-Dismiss)
@@ -607,15 +609,6 @@ class FishingBot:
                     pct = min(100.0, ((remaining_recast - remain) / remaining_recast) * 100.0)
                     self.set_progress(pct, f"คลิกข้ามการ์ดปลาแล้ว -> เตรียมเหวี่ยงเบ็ด: {remain:.1f}s...")
                     time.sleep(0.05)
-
-                # Check Capacity limit
-                cap_limit = int(self.config.get("rod_stats", {}).get("capacity", 0) or 0)
-                if cap_limit > 0 and self.stats["fish_caught"] >= cap_limit and features.get("inventory_full_detection", True):
-                    self.log(f"🎒 [Capacity Limit] ตกปลาครบความจุกระเป๋า ({self.stats['fish_caught']}/{cap_limit} ตัว) แล้ว! หยุดการทำงานชั่วคราวเพื่อให้ผู้เล่นไปเทกระเป๋า")
-                    self.set_state(BotState.PAUSED_INVENTORY_FULL)
-                    self.set_progress(0, f"🚨 กระเป๋าเต็ม: ตกครบ {cap_limit} ตัวแล้ว (กรุณาเทกระเป๋า)")
-                    self.stop(reason="CAPACITY_FULL")
-                    break
 
         except Exception as e:
             err_msg = traceback.format_exc()
