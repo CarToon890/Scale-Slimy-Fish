@@ -477,48 +477,52 @@ class FishingBotApp:
         )
         s1.pack(fill="x", pady=2)
 
+        # 1. Min Charge Gate (0 - 1500 ms)
         current_gate = int(self.config.get("timings", {}).get("min_charge_gate_ms", 450) or 450)
         self.gate_val_lbl = tk.Label(s1, text=f"⚡ Min Charge Gate: {current_gate} ms", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.gate_val_lbl.pack(anchor="w")
 
         self.gate_slider = tk.Scale(
-            s1, from_=100, to=600, orient="horizontal", resolution=25, showvalue=False,
+            s1, from_=0, to=1500, orient="horizontal", resolution=25, showvalue=False,
             bg=ModernColors.CARD_BG, fg=ModernColors.TEXT_MAIN, troughcolor=ModernColors.BORDER, highlightthickness=0,
             command=self.on_gate_slider_change
         )
         self.gate_slider.set(current_gate)
         self.gate_slider.pack(fill="x")
 
+        # 2. Fast Recast Delay (0.2 - 8.0 s)
         current_recast = self.config.get("timings", {}).get("recast_delay_sec", 1.9)
         self.recast_val_lbl = tk.Label(s1, text=f"⏳ Fast Recast Delay: {current_recast:.1f} s", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.recast_val_lbl.pack(anchor="w")
 
         self.recast_slider = tk.Scale(
-            s1, from_=1.0, to=3.5, orient="horizontal", resolution=0.1, showvalue=False,
+            s1, from_=0.2, to=8.0, orient="horizontal", resolution=0.1, showvalue=False,
             bg=ModernColors.CARD_BG, fg=ModernColors.TEXT_MAIN, troughcolor=ModernColors.BORDER, highlightthickness=0,
             command=self.on_recast_slider_change
         )
         self.recast_slider.set(current_recast)
         self.recast_slider.pack(fill="x")
 
+        # 3. Bite Reaction Delay (0 - 2000 ms)
         current_reaction = int(self.config.get("timings", {}).get("bite_reaction_delay_ms", 350) or 350)
         self.reaction_val_lbl = tk.Label(s1, text=f"🐟 Reaction Delay: {current_reaction} ms", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.reaction_val_lbl.pack(anchor="w")
 
         self.reaction_slider = tk.Scale(
-            s1, from_=150, to=800, orient="horizontal", resolution=25, showvalue=False,
+            s1, from_=0, to=2000, orient="horizontal", resolution=25, showvalue=False,
             bg=ModernColors.CARD_BG, fg=ModernColors.TEXT_MAIN, troughcolor=ModernColors.BORDER, highlightthickness=0,
             command=self.on_reaction_slider_change
         )
         self.reaction_slider.set(current_reaction)
         self.reaction_slider.pack(fill="x")
 
+        # 4. Template Match (20% - 99%)
         current_tpl_score = int(self.config.get("thresholds", {}).get("hold_template_match_threshold", 0.65) * 100)
         self.tpl_val_lbl = tk.Label(s1, text=f"🎯 Template Match: {current_tpl_score}%", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.tpl_val_lbl.pack(anchor="w")
 
         self.tpl_slider = tk.Scale(
-            s1, from_=40, to=90, orient="horizontal", resolution=1, showvalue=False,
+            s1, from_=20, to=99, orient="horizontal", resolution=1, showvalue=False,
             bg=ModernColors.CARD_BG, fg=ModernColors.TEXT_MAIN, troughcolor=ModernColors.BORDER, highlightthickness=0,
             command=self.on_tpl_slider_change
         )
