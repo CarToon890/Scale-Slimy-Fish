@@ -3,6 +3,7 @@
     "detection_mode": "auto",
     "use_normalized_roi": true,
     "template_path": "template_hold.png",
+    "template_continue_path": "template_continue.png",
     "mouse_target": {
       "x_ratio": 0.50,
       "y_ratio": 0.38
@@ -35,7 +36,13 @@
       "x_ratio": 0.30,
       "y_ratio": 0.10,
       "w_ratio": 0.40,
-      "h_ratio": 0.20
+      "h_ratio": 0.15
+    },
+    "inventory_full_roi": {
+      "x_ratio": 0.38,
+      "y_ratio": 0.12,
+      "w_ratio": 0.24,
+      "h_ratio": 0.08
     },
     "cancel_btn_roi": {
       "x_ratio": 0.42,
@@ -66,19 +73,19 @@
   },
   "thresholds": {
     "hold_template_match_threshold": 0.65,
+    "modal_continue_score": 0.70,
+    "inventory_red_ratio": 0.04,
     "cast_peak_subroi_ratio": 0.15,
     "cast_green_density_threshold": 0.18,
     "cast_lower_green": [35, 120, 100],
     "cast_upper_green": [85, 255, 255],
-    "hold_color_min_brightness": 130,
-    "hold_pixel_density_threshold": 0.006,
     "flash_brightness_threshold": 235
   },
   "features": {
     "global_interrupt_enabled": true,
+    "inventory_full_detection": true,
     "anti_afk_enabled": true,
     "dynamic_green_detection": true,
-    "pre_cast_validation": false,
     "lightning_flash_rejection": true,
     "double_check_enabled": true,
     "failsafe_auto_recovery": true

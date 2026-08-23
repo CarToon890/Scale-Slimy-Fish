@@ -1,12 +1,14 @@
 """
 Bot Core Engine for Scale Slimy Fish Auto Fishing Bot.
-Implements the 6-State FSM Architecture:
-- Precision Casting: Uninterrupted MouseDown charge to green peak
-- Global Interrupt Layer: Auto-detects & dismisses Legendary "Click to Continue" modals
-- Dual-Anchor Sinking: Template Match + Red '!' Icon
-- High-Precision Cancel Button Validation in State 3
-- Zero-Drift Micro-Jitter 120ms
-- State 4 Click-to-Dismiss fast reset (1.9s)
+Implements the 6-State FSM Architecture with Interrupt Layer:
+1. Global Interrupt Layer:
+   - Click to Continue Modal Handler (Legendary / New Fish Unlock)
+   - Inventory Full Warning Detector (Auto-Pause Bot to prevent wasted casts)
+2. Precision Casting: Uninterrupted MouseDown charge to green peak
+3. Dual-Anchor Sinking: Template Match + Red '!' Icon
+4. High-Precision Cancel Button Validation in State 3
+5. Zero-Drift Micro-Jitter 120ms
+6. State 4 Click-to-Dismiss fast reset (1.9s)
 """
 
 import sys
@@ -48,6 +50,7 @@ class BotState(Enum):
     SINKING = "STATE 2: SINKING (เบ็ดจมน้ำ 18.0s+ & Dual-Anchor '!'/Hold)"
     REELING = "STATE 3: REELING (กดค้างดึงปลา + Micro-Jitter 120ms & Extension)"
     LOOT_RESET = "STATE 4: LOOT & RESET (คลิกข้ามการ์ด & วนรอบ 1.9s)"
+    PAUSED_INVENTORY_FULL = "🚨 PAUSED: กระเป๋าปลาเต็ม (Inventory Full)!"
 
 
 class InputSimulator:
@@ -153,17 +156,28 @@ class FishingBot:
             self.stats_callback(self.stats)
 
     def check_global_interrupt(self):
-        if not self.config.get("features", {}).get("global_interrupt_enabled", True):
-            return False
+        features = self.config.get("features", {})
 
-        if self.detector.detect_click_to_continue():
-            self.log("🚨 [Global Interrupt] ตรวจพบหน้าต่างปลาหายาก (Click to Continue) -> ส่งคลิกเคลียร์หน้าต่างทันที")
-            InputSimulator.move_to_safe_water_zone(self.config)
-            InputSimulator.click(0.04)
-            time.sleep(0.5)
-            self.stats["modals_cleared"] += 1
-            self.update_stats()
-            return True
+        # 1. Click to Continue (New / Legendary Fish Unlock)
+        if features.get("global_interrupt_enabled", True):
+            if self.detector.is_click_to_continue_present():
+                self.log("⚡ [Global Interrupt] ตรวจพบ 'Click to Continue' (ปลาใหม่/หายาก) -> ส่งคลิกเคลียร์หน้าต่างทันที")
+                InputSimulator.move_to_safe_water_zone(self.config)
+                InputSimulator.click(0.04)
+                time.sleep(0.5)
+                self.stats["modals_cleared"] += 1
+                self.update_stats()
+                return True
+
+        # 2. Inventory Full Detection (Pause Bot)
+        if features.get("inventory_full_detection", True):
+            if self.detector.is_inventory_full():
+                self.log("🚨 [Inventory Full] ตรวจพบกระเป๋าปลาเต็ม! หยุดการทำงานชั่วคราวเพื่อป้องกันการเหวี่ยงฟรี")
+                self.set_state(BotState.PAUSED_INVENTORY_FULL)
+                self.set_progress(0, "🚨 หยุดชั่วคราว: กระเป๋าปลาเต็ม (กรุณาเทกระเป๋า)")
+                self.stop(reason="INVENTORY_FULL")
+                return True
+
         return False
 
     def calculate_reel_duration(self):
@@ -200,17 +214,20 @@ class FishingBot:
         self.worker_thread = threading.Thread(target=self._bot_loop, daemon=True)
         self.worker_thread.start()
         mode = self.config.get("screen", {}).get("detection_mode", "auto").upper()
-        self.log(f"🚀 บอทเริ่มทำงาน (Clean Cast & High-Precision Cancel | โหมด: {mode})")
+        self.log(f"🚀 บอทเริ่มทำงาน (Modal Handler & Inventory Full Check | โหมด: {mode})")
 
-    def stop(self):
+    def stop(self, reason=None):
         if not self.is_running:
             return
 
         self.is_running = False
         InputSimulator.mouse_up()
-        self.set_state(BotState.IDLE)
-        self.set_progress(0, "ระบบหยุดการทำงาน")
-        self.log("⏹️ บอทหยุดการทำงาน (Stopped)")
+        if reason == "INVENTORY_FULL":
+            self.set_state(BotState.PAUSED_INVENTORY_FULL)
+        else:
+            self.set_state(BotState.IDLE)
+            self.set_progress(0, "ระบบหยุดการทำงาน")
+            self.log("⏹️ บอทหยุดการทำงาน (Stopped)")
 
     def _perform_failsafe_recovery(self):
         self.log("🚨 [Failsafe Auto-Recovery] เกิด Timeout ติดต่อกัน 2 ครั้ง -> รีเซ็ตคันเบ็ด (Unequip/Re-equip Slot 1)...")
@@ -300,8 +317,10 @@ class FishingBot:
 
         try:
             while self.is_running:
-                # 0. Global Interrupt Check
-                self.check_global_interrupt()
+                # 0. Global Pre-Check (Click to Continue & Inventory Full)
+                if self.check_global_interrupt():
+                    if not self.is_running:
+                        break
 
                 # Anti-AFK Check
                 if features.get("anti_afk_enabled", True):
@@ -319,7 +338,9 @@ class FishingBot:
                 time.sleep(idle_delay)
 
                 # Check Interrupt before Cast
-                self.check_global_interrupt()
+                if self.check_global_interrupt():
+                    if not self.is_running:
+                        break
 
                 # ====================================================
                 # STATE 1: CASTING (Sub-ROI 15% + 450ms Min Gate)
@@ -348,7 +369,9 @@ class FishingBot:
                         break
 
                     # Check Global Interrupt during sinking
-                    self.check_global_interrupt()
+                    if self.check_global_interrupt():
+                        if not self.is_running:
+                            break
 
                     elapsed_sink = time.time() - start_sink
                     sink_pct = min(100.0, (elapsed_sink / sinking_timeout) * 100.0)
@@ -372,6 +395,9 @@ class FishingBot:
                             hooked = True
                             break
                     time.sleep(scan_interval)
+
+                if not self.is_running:
+                    break
 
                 if not hooked:
                     self.consecutive_sinking_timeouts += 1
@@ -452,7 +478,9 @@ class FishingBot:
                 time.sleep(0.5)
 
                 # Check global interrupt / Legendary popup
-                self.check_global_interrupt()
+                if self.check_global_interrupt():
+                    if not self.is_running:
+                        break
 
                 # Left Click at Safe Zone to dismiss notification cards
                 InputSimulator.move_to_safe_water_zone(self.config)
@@ -474,5 +502,6 @@ class FishingBot:
             print(f"[Bot Error] {err_msg}")
         finally:
             InputSimulator.mouse_up()
-            self.set_state(BotState.IDLE)
-            self.set_progress(0, "ระบบหยุดการทำงาน")
+            if self.state != BotState.PAUSED_INVENTORY_FULL:
+                self.set_state(BotState.IDLE)
+                self.set_progress(0, "ระบบหยุดการทำงาน")

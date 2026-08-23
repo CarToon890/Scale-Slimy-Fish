@@ -1,11 +1,12 @@
 """
 Vision Module for Scale Slimy Fish Auto Fishing Bot.
 Implements:
-1. High-Precision Cancel Button Detection (Bottom-Edge UI + Dual Red/White Contrast)
-2. Global Interrupt Modal Handler: detect_click_to_continue()
-3. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
-4. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
-5. Lightning Flash Rejection Filter
+1. is_click_to_continue_present(): Template Matching on "Click to Continue" (Score >= 0.70)
+2. is_inventory_full(): HSV Red Masking on "Inventory full" text (Red Ratio >= 0.04)
+3. High-Precision Cancel Button Detection (Bottom-Edge UI + Dual Red/White Contrast)
+4. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
+5. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
+6. Lightning Flash Rejection Filter
 """
 
 import sys
@@ -46,9 +47,17 @@ class VisionDetector:
         # Reusable Morphological Kernel (3x3)
         self.kernel_3x3 = np.ones((3, 3), np.uint8)
 
-        # Template Cache
+        # HSV Red Range for Inventory Full
+        self.lower_red1 = np.array([0, 140, 100], dtype=np.uint8)
+        self.upper_red1 = np.array([10, 255, 255], dtype=np.uint8)
+        self.lower_red2 = np.array([170, 140, 100], dtype=np.uint8)
+        self.upper_red2 = np.array([180, 255, 255], dtype=np.uint8)
+
+        # Template Caches
         self.hold_template_gray = None
+        self.continue_template_gray = None
         self.load_hold_template()
+        self.load_continue_template()
 
     @property
     def sct(self):
@@ -74,8 +83,21 @@ class VisionDetector:
                     self.hold_template_gray = img
                     return True
             except Exception as e:
-                print(f"[Vision] Error loading template: {e}")
+                print(f"[Vision] Error loading hold template: {e}")
         self.hold_template_gray = None
+        return False
+
+    def load_continue_template(self):
+        tpl_path = self.config.get("screen", {}).get("template_continue_path", "template_continue.png")
+        if os.path.exists(tpl_path):
+            try:
+                img = cv2.imread(tpl_path, cv2.IMREAD_GRAYSCALE)
+                if img is not None and img.size > 0:
+                    self.continue_template_gray = img
+                    return True
+            except Exception as e:
+                print(f"[Vision] Error loading continue template: {e}")
+        self.continue_template_gray = None
         return False
 
     def save_hold_template(self, frame):
@@ -84,6 +106,14 @@ class VisionDetector:
         tpl_path = self.config.get("screen", {}).get("template_path", "template_hold.png")
         cv2.imwrite(tpl_path, frame)
         self.load_hold_template()
+        return True
+
+    def save_continue_template(self, frame):
+        if frame is None or frame.size == 0:
+            return False
+        tpl_path = self.config.get("screen", {}).get("template_continue_path", "template_continue.png")
+        cv2.imwrite(tpl_path, frame)
+        self.load_continue_template()
         return True
 
     def get_screen_dimensions(self):
@@ -118,13 +148,89 @@ class VisionDetector:
         return np.mean(gray) >= flash_threshold
 
     # ----------------------------------------------------
-    # HIGH-PRECISION CANCEL BUTTON DETECTOR (Bottom Edge UI)
+    # 1. CLICK TO CONTINUE (LEGENDARY / NEW FISH POPUP)
+    # ----------------------------------------------------
+    def is_click_to_continue_present(self) -> bool:
+        """Detects the 'Click to Continue' modal popup via Template Matching & Fallback Banner."""
+        modal_roi = self.config.get("screen", {}).get("modal_continue_roi", {
+            "x_ratio": 0.30,
+            "y_ratio": 0.10,
+            "w_ratio": 0.40,
+            "h_ratio": 0.15
+        })
+        box = self.ratio_to_pixel_box(modal_roi)
+        frame = self.capture_screen(box)
+
+        if frame is None or frame.size == 0:
+            return False
+
+        if self.is_lightning_flash(frame):
+            return False
+
+        # 1. Primary: Template Matching with template_continue.png
+        if self.continue_template_gray is None:
+            self.load_continue_template()
+
+        if self.continue_template_gray is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            th, tw = self.continue_template_gray.shape[:2]
+            gh, gw = gray.shape[:2]
+
+            if gh >= th and gw >= tw:
+                res = cv2.matchTemplate(gray, self.continue_template_gray, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(res)
+                score_threshold = self.config.get("thresholds", {}).get("modal_continue_score", 0.70)
+                if max_val >= score_threshold:
+                    return True
+
+        # 2. Fallback: Golden 'Found New Fish!' + White text banner detection
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        yellow_mask = cv2.inRange(hsv, np.array([16, 130, 140]), np.array([34, 255, 255]))
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        _, white_mask = cv2.threshold(gray_frame, 235, 255, cv2.THRESH_BINARY)
+
+        modal_pixels = cv2.countNonZero(yellow_mask) + cv2.countNonZero(white_mask)
+        return modal_pixels >= 650
+
+    def detect_click_to_continue(self) -> bool:
+        return self.is_click_to_continue_present()
+
+    # ----------------------------------------------------
+    # 2. INVENTORY FULL WARNING DETECTOR
+    # ----------------------------------------------------
+    def is_inventory_full(self) -> bool:
+        """Detects the red 'Inventory full' warning text near top center."""
+        inv_roi = self.config.get("screen", {}).get("inventory_full_roi", {
+            "x_ratio": 0.38,
+            "y_ratio": 0.12,
+            "w_ratio": 0.24,
+            "h_ratio": 0.08
+        })
+        box = self.ratio_to_pixel_box(inv_roi)
+        frame = self.capture_screen(box)
+
+        if frame is None or frame.size == 0:
+            return False
+
+        if self.is_lightning_flash(frame):
+            return False
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
+        mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
+        red_mask = cv2.bitwise_or(mask1, mask2)
+        red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, self.kernel_3x3)
+
+        total_pixels = box["width"] * box["height"]
+        red_ratio = cv2.countNonZero(red_mask) / max(1, total_pixels)
+
+        threshold = self.config.get("thresholds", {}).get("inventory_red_ratio", 0.04)
+        return red_ratio >= threshold
+
+    # ----------------------------------------------------
+    # 3. HIGH-PRECISION CANCEL BUTTON DETECTOR
     # ----------------------------------------------------
     def detect_red_cancel_button(self):
-        """
-        High-precision detector for the red Cancel button at the very bottom-center UI.
-        Strictly excludes the character's body/hands/held rod.
-        """
         cancel_roi = self.config.get("screen", {}).get("cancel_btn_roi", {
             "x_ratio": 0.42,
             "y_ratio": 0.83,
@@ -138,7 +244,6 @@ class VisionDetector:
             return False
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        # Saturated vibrant red of Roblox Cancel button
         mask1 = cv2.inRange(hsv, np.array([0, 140, 110]), np.array([10, 255, 255]))
         mask2 = cv2.inRange(hsv, np.array([170, 140, 110]), np.array([180, 255, 255]))
         red_mask = cv2.bitwise_or(mask1, mask2)
@@ -146,37 +251,11 @@ class VisionDetector:
 
         red_pixels = cv2.countNonZero(red_mask)
 
-        # Also check for white text contrast inside the button area
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         _, white_mask = cv2.threshold(gray, 215, 255, cv2.THRESH_BINARY)
         white_pixels = cv2.countNonZero(white_mask)
 
-        # Requires a solid red button body (>= 250px) AND text contrast (>= 20px)
         return red_pixels >= 250 and white_pixels >= 20
-
-    # ----------------------------------------------------
-    # GLOBAL INTERRUPT: MODAL / NEW FISH POPUP DETECTOR
-    # ----------------------------------------------------
-    def detect_click_to_continue(self):
-        modal_roi = self.config.get("screen", {}).get("modal_continue_roi", {
-            "x_ratio": 0.30,
-            "y_ratio": 0.10,
-            "w_ratio": 0.40,
-            "h_ratio": 0.20
-        })
-        box = self.ratio_to_pixel_box(modal_roi)
-        frame = self.capture_screen(box)
-
-        if frame is None or frame.size == 0:
-            return False
-
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        yellow_mask = cv2.inRange(hsv, np.array([18, 140, 150]), np.array([32, 255, 255]))
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        _, white_mask = cv2.threshold(gray, 235, 255, cv2.THRESH_BINARY)
-
-        modal_pixels = cv2.countNonZero(yellow_mask) + cv2.countNonZero(white_mask)
-        return modal_pixels >= 850
 
     # ----------------------------------------------------
     # MANUAL & AUTO ROI CAPTURES
@@ -397,4 +476,5 @@ class VisionDetector:
 
 if __name__ == "__main__":
     detector = VisionDetector()
-    print("Testing detect_red_cancel_button():", detector.detect_red_cancel_button())
+    print("Testing is_click_to_continue_present():", detector.is_click_to_continue_present())
+    print("Testing is_inventory_full():", detector.is_inventory_full())

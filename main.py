@@ -3,6 +3,8 @@ Compact Side-Panel GUI Application for Scale Slimy Fish Auto Fishing Bot.
 Optimized for Side-by-Side Gaming (440x680px) with:
 - Always on Top (ปักหมุดลอยบนจอคู่กับ Roblox)
 - Real-Time Live Rod Status LED (🔴 เบ็ดในน้ำ / 🟢 ถือเบ็ดบนบก)
+- Click to Continue Modal Handler (Legendary Fish Unlock)
+- Inventory Full Warning Detector (Auto-Pause with Red Banner)
 - Dual Live Camera Monitors (Power Bar & Hold Text)
 - Dynamic Rod Calculator (Depth & Strength)
 - Full Advanced Settings Tab (Sliders & Safety Switches)
@@ -270,7 +272,7 @@ class FishingBotApp:
         )
         self.state_badge.pack(side="left")
 
-        # Live Rod Status LED Badge (Accurately differentiates Holding vs Fishing)
+        # Live Rod Status LED Badge
         self.rod_led_lbl = tk.Label(
             b_top,
             text="🟢 ถือเบ็ดบนบก (Ready)",
@@ -340,6 +342,7 @@ class FishingBotApp:
         self.build_tab_logs()
 
     def build_tab_monitor(self):
+        # 1. Rod Calculator Compact Card
         rod_card = tk.LabelFrame(
             self.tab_monitor,
             text=" 🎣 สเปกคันเบ็ด (Rod Physics) ",
@@ -386,7 +389,7 @@ class FishingBotApp:
             command=self.open_point_selector
         ).pack(side="right")
 
-        # Dual Camera Monitors (Side-by-Side, ~190x95px)
+        # 2. Dual Camera Monitors (Side-by-Side, ~190x95px)
         cam_frame = tk.Frame(self.tab_monitor, bg=ModernColors.BG_DARK)
         cam_frame.pack(fill="both", expand=True, padx=4, pady=2)
 
@@ -414,7 +417,7 @@ class FishingBotApp:
             command=lambda: self.open_roi_selector("Power Bar", "cast_bar_roi")
         ).pack(fill="x", pady=1)
 
-        # Monitor 2: Hold to Fish
+        # Monitor 2: Hold to Fish & Continue
         c2 = tk.LabelFrame(
             cam_frame,
             text=" 2. Hold to fish ",
@@ -436,15 +439,15 @@ class FishingBotApp:
         c2_b.pack(fill="x", pady=1)
 
         tk.Button(
-            c2_b, text="📸 แคป", font=("Segoe UI", 7, "bold"),
+            c2_b, text="📸 แคป Hold", font=("Segoe UI", 7, "bold"),
             bg="#238636", fg="white", relief="flat",
             command=self.open_template_capture_selector
         ).pack(side="left", fill="x", expand=True, padx=(0, 1))
 
         tk.Button(
-            c2_b, text="🎯 กรอบ", font=("Segoe UI", 7),
-            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_YELLOW, relief="flat",
-            command=lambda: self.open_roi_selector("Hold to fish", "hold_roi")
+            c2_b, text="📸 แคป Continue", font=("Segoe UI", 7, "bold"),
+            bg="#8957e5", fg="white", relief="flat",
+            command=self.open_continue_capture_selector
         ).pack(side="right", fill="x", expand=True, padx=(1, 0))
 
     def build_tab_settings(self):
@@ -512,7 +515,7 @@ class FishingBotApp:
 
         s2 = tk.LabelFrame(
             container,
-            text=" 🛡️ สวิตช์ฟังก์ชันความปลอดภัย ",
+            text=" 🛡️ สวิตช์ฟังก์ชันความปลอดภัย & แจ้งเตือน ",
             font=("Segoe UI", 8, "bold"),
             fg=ModernColors.ACCENT_GREEN,
             bg=ModernColors.CARD_BG,
@@ -523,13 +526,20 @@ class FishingBotApp:
 
         features = self.config.get("features", {})
         self.var_interrupt = tk.BooleanVar(value=features.get("global_interrupt_enabled", True))
+        self.var_inv_full = tk.BooleanVar(value=features.get("inventory_full_detection", True))
         self.var_double_check = tk.BooleanVar(value=features.get("double_check_enabled", True))
         self.var_lightning = tk.BooleanVar(value=features.get("lightning_flash_rejection", True))
         self.var_failsafe = tk.BooleanVar(value=features.get("failsafe_auto_recovery", True))
 
         tk.Checkbutton(
-            s2, text="🚨 Global Interrupt (ปิดป๊อปอัปปลาหายาก)",
+            s2, text="🚨 Global Interrupt (ปิดป๊อปอัป Click to Continue)",
             variable=self.var_interrupt, font=("Segoe UI", 7, "bold"), fg=ModernColors.ACCENT_PURPLE, bg=ModernColors.CARD_BG,
+            selectcolor="#11111b", command=self.on_toggle_feature
+        ).pack(anchor="w")
+
+        tk.Checkbutton(
+            s2, text="🎒 ตรวจจับกระเป๋าเต็ม (Inventory Full Auto-Pause)",
+            variable=self.var_inv_full, font=("Segoe UI", 7, "bold"), fg=ModernColors.ACCENT_RED, bg=ModernColors.CARD_BG,
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(anchor="w")
 
@@ -622,7 +632,7 @@ class FishingBotApp:
                         txt_h = f"🟢 พบข้อความ! ({sc}%)" if t_ok else f"⚪ สแกนหา... ({sc}%)"
                         self.status_lbl_hold.config(text=txt_h, fg=ModernColors.ACCENT_GREEN if t_ok else ModernColors.TEXT_MUTED)
 
-                        # Update Rod Status LED Badge (Accurately differentiates Holding vs Fishing)
+                        # Update Rod Status LED Badge
                         if can_ok:
                             self.rod_led_lbl.config(text="🔴 เบ็ดในน้ำ (Fishing)", fg=ModernColors.ACCENT_RED)
                         else:
@@ -687,6 +697,7 @@ class FishingBotApp:
         if "features" not in self.config:
             self.config["features"] = {}
         self.config["features"]["global_interrupt_enabled"] = self.var_interrupt.get()
+        self.config["features"]["inventory_full_detection"] = self.var_inv_full.get()
         self.config["features"]["double_check_enabled"] = self.var_double_check.get()
         self.config["features"]["lightning_flash_rejection"] = self.var_lightning.get()
         self.config["features"]["failsafe_auto_recovery"] = self.var_failsafe.get()
@@ -699,11 +710,13 @@ class FishingBotApp:
             self.config["timings"]["recast_delay_sec"] = 1.9
             self.config["timings"]["bite_reaction_delay_ms"] = 350
             self.config["thresholds"]["hold_template_match_threshold"] = 0.65
+            self.config["thresholds"]["modal_continue_score"] = 0.70
+            self.config["thresholds"]["inventory_red_ratio"] = 0.04
             self.config["features"] = {
                 "global_interrupt_enabled": True,
+                "inventory_full_detection": True,
                 "anti_afk_enabled": True,
                 "dynamic_green_detection": True,
-                "pre_cast_validation": False,
                 "lightning_flash_rejection": True,
                 "double_check_enabled": True,
                 "failsafe_auto_recovery": True
@@ -714,6 +727,7 @@ class FishingBotApp:
             self.reaction_slider.set(350)
             self.tpl_slider.set(65)
             self.var_interrupt.set(True)
+            self.var_inv_full.set(True)
             self.var_double_check.set(True)
             self.var_lightning.set(True)
             self.var_failsafe.set(True)
@@ -725,9 +739,19 @@ class FishingBotApp:
             if crop_bgr is not None and crop_bgr.size > 0:
                 self.bot.detector.save_hold_template(crop_bgr)
                 self.append_log("✨ บันทึกแม่แบบ template_hold.png สำเร็จ!")
-                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบข้อความสำเร็จ!")
+                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ Hold to fish สำเร็จ!")
 
         FullscreenFrozenSelector(self.root, "ข้อความ 'Hold to fish'", mode="box", on_selected=_on_selected)
+
+    def open_continue_capture_selector(self):
+        self.append_log("📸 แคปแม่แบบข้อความ 'Click to Continue'...")
+        def _on_selected(roi_ratio, crop_bgr):
+            if crop_bgr is not None and crop_bgr.size > 0:
+                self.bot.detector.save_continue_template(crop_bgr)
+                self.append_log("✨ บันทึกแม่แบบ template_continue.png สำเร็จ!")
+                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ Click to Continue สำเร็จ!")
+
+        FullscreenFrozenSelector(self.root, "ข้อความ 'Click to Continue'", mode="box", on_selected=_on_selected)
 
     def open_roi_selector(self, label, config_key):
         self.append_log(f"🎯 เลือกพื้นที่: {label}...")
@@ -788,7 +812,12 @@ class FishingBotApp:
 
     def update_state_display(self, new_state: BotState):
         def _update():
-            self.state_var.set(new_state.value.split(":")[0] + ": " + new_state.name)
+            if new_state == BotState.PAUSED_INVENTORY_FULL:
+                self.state_var.set("🚨 PAUSED: กระเป๋าปลาเต็ม!")
+                self.state_badge.config(fg=ModernColors.ACCENT_RED)
+                self.activity_var.set("กระเป๋าปลาเต็ม! กรุณาไปเทกระเป๋าแล้วกด F6 เพื่อเริ่มใหม่")
+            else:
+                self.state_var.set(new_state.value.split(":")[0] + ": " + new_state.name)
         self.root.after(0, _update)
 
     def update_stats_display(self, stats):
