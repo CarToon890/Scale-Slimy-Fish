@@ -105,6 +105,25 @@ class InputSimulator:
         time.sleep(0.02)
         user32.mouse_event(MOUSEEVENTF_MOVE, -2, 0, 0, 0)
 
+    @staticmethod
+    def click_cancel_button(config=None):
+        sw = user32.GetSystemMetrics(0)
+        sh = user32.GetSystemMetrics(1)
+        cancel_roi = config.get("screen", {}).get("cancel_btn_roi", {
+            "x_ratio": 0.42,
+            "y_ratio": 0.83,
+            "w_ratio": 0.16,
+            "h_ratio": 0.11
+        }) if config else {"x_ratio": 0.42, "y_ratio": 0.83, "w_ratio": 0.16, "h_ratio": 0.11}
+        
+        cx = int(sw * (cancel_roi.get("x_ratio", 0.42) + cancel_roi.get("w_ratio", 0.16) / 2.0))
+        cy = int(sh * (cancel_roi.get("y_ratio", 0.83) + cancel_roi.get("h_ratio", 0.11) / 2.0))
+        user32.SetCursorPos(cx, cy)
+        time.sleep(0.06)
+        InputSimulator.click(0.04)
+        time.sleep(0.15)
+        InputSimulator.move_to_safe_water_zone(config)
+
 
 class FishingBot:
     def __init__(self, config_path="config.json", log_callback=None, state_callback=None, stats_callback=None, progress_callback=None, overlay_callback=None):
@@ -503,11 +522,13 @@ class FishingBot:
                         last_jitter = now
                     time.sleep(scan_interval)
 
-                # State 3 Extension check: keep reeling continuously until red Cancel button disappears
                 cancel_extension_enabled = features.get("cancel_extension_enabled", True)
                 cancel_extension_max = float(timings.get("reeling_cancel_extension_max_sec", 35.0) or 35.0)
 
                 if cancel_extension_enabled and self.is_running:
+                    # ====================================================
+                    # Mode A: Cancel Extension Enabled (Keep reeling until fish surfaces)
+                    # ====================================================
                     if self.detector.detect_red_cancel_button():
                         self.log(f"🔄 [Cancel Auto-Extension] ครบเวลา {reel_hold_duration:.1f}s แต่ปุ่ม Cancel ยังคงอยู่ -> กดค้างดึงต่อไปเรื่อยๆ จนกว่าปุ่ม Cancel จะหายไป...")
                         ext_start = time.perf_counter()
@@ -528,10 +549,28 @@ class FishingBot:
                                     break
                             time.sleep(scan_interval)
 
-                InputSimulator.mouse_up()
-                self.stats["fish_caught"] += 1
-                self.update_stats()
-                self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
+                    InputSimulator.mouse_up()
+                    self.stats["fish_caught"] += 1
+                    self.update_stats()
+                    self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
+
+                else:
+                    # ====================================================
+                    # Mode B: Cancel Extension Disabled (Release mouse at exact time, click Cancel if still present to loop back to State 1)
+                    # ====================================================
+                    InputSimulator.mouse_up()
+                    time.sleep(0.08)
+
+                    if self.is_running and self.detector.detect_red_cancel_button():
+                        self.log(f"🛑 [Fast Cancel Reset] ครบเวลาดึงปลา {reel_hold_duration:.1f}s แต่ปลายังไม่ขึ้นน้ำ (ปิดสวิตช์ Extension) -> คลิกปุ่ม Cancel เพื่อตัดสายและวนกลับไปเหวี่ยงเบ็ด State 1 ทันที!")
+                        self.set_progress(100.0, "🛑 กำลังคลิกปุ่ม Cancel เพื่อตัดสายเบ็ดและเริ่มเหวี่ยงใหม่...")
+                        InputSimulator.click_cancel_button(self.config)
+                        time.sleep(0.4)
+                        continue  # Loop back to STATE 1 immediately!
+                    else:
+                        self.stats["fish_caught"] += 1
+                        self.update_stats()
+                        self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบตามเวลา {reel_hold_duration:.1f}s (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
 
                 # ====================================================
                 # STATE 4: LOOT & FAST RESET (1.9s Recast + Click-to-Dismiss)
