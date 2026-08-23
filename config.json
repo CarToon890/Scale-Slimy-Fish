@@ -1,41 +1,41 @@
 {
   "screen": {
-    "detection_mode": "auto",
+    "detection_mode": "manual",
     "use_normalized_roi": true,
     "template_path": "template_hold.png",
     "template_continue_path": "template_continue.png",
     "mouse_target": {
-      "x_ratio": 0.50,
+      "x_ratio": 0.5,
       "y_ratio": 0.38
     },
     "hold_roi": {
       "x_ratio": 0.35,
-      "y_ratio": 0.40,
-      "w_ratio": 0.30,
+      "y_ratio": 0.4,
+      "w_ratio": 0.3,
       "h_ratio": 0.15
     },
     "cast_bar_roi": {
-      "x_ratio": 0.76,
-      "y_ratio": 0.22,
-      "w_ratio": 0.06,
-      "h_ratio": 0.35
+      "x_ratio": 0.7219,
+      "y_ratio": 0.2898,
+      "w_ratio": 0.0245,
+      "h_ratio": 0.3046
     },
     "auto_cast_search_roi": {
       "x_ratio": 0.65,
       "y_ratio": 0.15,
-      "w_ratio": 0.30,
-      "h_ratio": 0.60
+      "w_ratio": 0.3,
+      "h_ratio": 0.6
     },
     "auto_hold_search_roi": {
       "x_ratio": 0.25,
       "y_ratio": 0.25,
-      "w_ratio": 0.50,
+      "w_ratio": 0.5,
       "h_ratio": 0.45
     },
     "modal_continue_roi": {
-      "x_ratio": 0.30,
-      "y_ratio": 0.10,
-      "w_ratio": 0.40,
+      "x_ratio": 0.3,
+      "y_ratio": 0.1,
+      "w_ratio": 0.4,
       "h_ratio": 0.15
     },
     "inventory_full_roi": {
@@ -57,7 +57,7 @@
   },
   "timings": {
     "idle_delay_sec": 0.4,
-    "min_charge_gate_ms": 450,
+    "min_charge_gate_ms": 635,
     "charge_backup_sec": 1.4,
     "cast_poll_interval_sec": 0.005,
     "cast_settle_delay_sec": 1.0,
@@ -73,12 +73,20 @@
   },
   "thresholds": {
     "hold_template_match_threshold": 0.65,
-    "modal_continue_score": 0.70,
+    "modal_continue_score": 0.7,
     "inventory_red_ratio": 0.04,
     "cast_peak_subroi_ratio": 0.15,
     "cast_green_density_threshold": 0.18,
-    "cast_lower_green": [35, 120, 100],
-    "cast_upper_green": [85, 255, 255],
+    "cast_lower_green": [
+      35,
+      120,
+      100
+    ],
+    "cast_upper_green": [
+      85,
+      255,
+      255
+    ],
     "flash_brightness_threshold": 235
   },
   "features": {

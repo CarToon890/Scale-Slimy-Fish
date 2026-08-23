@@ -151,7 +151,6 @@ class VisionDetector:
     # 1. CLICK TO CONTINUE (LEGENDARY / NEW FISH POPUP)
     # ----------------------------------------------------
     def is_click_to_continue_present(self) -> bool:
-        """Detects the 'Click to Continue' modal popup via Template Matching & Fallback Banner."""
         modal_roi = self.config.get("screen", {}).get("modal_continue_roi", {
             "x_ratio": 0.30,
             "y_ratio": 0.10,
@@ -199,7 +198,6 @@ class VisionDetector:
     # 2. INVENTORY FULL WARNING DETECTOR
     # ----------------------------------------------------
     def is_inventory_full(self) -> bool:
-        """Detects the red 'Inventory full' warning text near top center."""
         inv_roi = self.config.get("screen", {}).get("inventory_full_roi", {
             "x_ratio": 0.38,
             "y_ratio": 0.12,
@@ -445,6 +443,15 @@ class VisionDetector:
         sh, sw = search_gray.shape[:2]
 
         if sh < th or sw < tw:
+            # Auto-adapt: If search frame is smaller than template, scale template down
+            scale = min(sh / max(1, th), sw / max(1, tw))
+            if scale > 0.3:
+                tpl_adapted = cv2.resize(self.hold_template_gray, (max(5, int(tw * scale)), max(5, int(th * scale))), interpolation=cv2.INTER_AREA)
+                res = cv2.matchTemplate(search_gray, tpl_adapted, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(res)
+                match_score = round(float(max_val), 4)
+                is_detected = (match_score >= threshold) or has_excl
+                return is_detected, match_score, {"is_detected": is_detected, "match_score": match_score, "has_exclamation": has_excl}
             return has_excl, 0.0, {"error": "Search frame smaller than template"}
 
         res = cv2.matchTemplate(search_gray, self.hold_template_gray, cv2.TM_CCOEFF_NORMED)
