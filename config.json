@@ -38,10 +38,10 @@
       "h_ratio": 0.20
     },
     "cancel_btn_roi": {
-      "x_ratio": 0.40,
-      "y_ratio": 0.70,
-      "w_ratio": 0.20,
-      "h_ratio": 0.18
+      "x_ratio": 0.42,
+      "y_ratio": 0.83,
+      "w_ratio": 0.16,
+      "h_ratio": 0.11
     }
   },
   "rod_stats": {
@@ -78,7 +78,7 @@
     "global_interrupt_enabled": true,
     "anti_afk_enabled": true,
     "dynamic_green_detection": true,
-    "pre_cast_validation": true,
+    "pre_cast_validation": false,
     "lightning_flash_rejection": true,
     "double_check_enabled": true,
     "failsafe_auto_recovery": true

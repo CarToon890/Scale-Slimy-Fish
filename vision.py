@@ -1,10 +1,10 @@
 """
 Vision Module for Scale Slimy Fish Auto Fishing Bot.
 Implements:
-1. Global Interrupt Modal Handler: detect_click_to_continue()
-2. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
-3. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
-4. Red Cancel Button Detector (Pre-Cast State Validation)
+1. High-Precision Cancel Button Detection (Bottom-Edge UI + Dual Red/White Contrast)
+2. Global Interrupt Modal Handler: detect_click_to_continue()
+3. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
+4. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
 5. Lightning Flash Rejection Filter
 """
 
@@ -52,7 +52,6 @@ class VisionDetector:
 
     @property
     def sct(self):
-        """Returns a thread-local MSS instance to prevent cross-thread handle errors."""
         if not hasattr(self._thread_local, "sct") or self._thread_local.sct is None:
             self._thread_local.sct = mss.mss()
         return self._thread_local.sct
@@ -67,7 +66,6 @@ class VisionDetector:
         return {}
 
     def load_hold_template(self):
-        """Loads or reloads the 'Hold to fish' reference template image."""
         tpl_path = self.config.get("screen", {}).get("template_path", "template_hold.png")
         if os.path.exists(tpl_path):
             try:
@@ -113,7 +111,6 @@ class VisionDetector:
         return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
     def is_lightning_flash(self, frame):
-        """Detects transient full-screen whiteout caused by lightning."""
         if frame is None or frame.size == 0:
             return False
         flash_threshold = self.config.get("thresholds", {}).get("flash_brightness_threshold", 235)
@@ -121,10 +118,46 @@ class VisionDetector:
         return np.mean(gray) >= flash_threshold
 
     # ----------------------------------------------------
+    # HIGH-PRECISION CANCEL BUTTON DETECTOR (Bottom Edge UI)
+    # ----------------------------------------------------
+    def detect_red_cancel_button(self):
+        """
+        High-precision detector for the red Cancel button at the very bottom-center UI.
+        Strictly excludes the character's body/hands/held rod.
+        """
+        cancel_roi = self.config.get("screen", {}).get("cancel_btn_roi", {
+            "x_ratio": 0.42,
+            "y_ratio": 0.83,
+            "w_ratio": 0.16,
+            "h_ratio": 0.11
+        })
+        box = self.ratio_to_pixel_box(cancel_roi)
+        frame = self.capture_screen(box)
+
+        if frame is None or frame.size == 0:
+            return False
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # Saturated vibrant red of Roblox Cancel button
+        mask1 = cv2.inRange(hsv, np.array([0, 140, 110]), np.array([10, 255, 255]))
+        mask2 = cv2.inRange(hsv, np.array([170, 140, 110]), np.array([180, 255, 255]))
+        red_mask = cv2.bitwise_or(mask1, mask2)
+        red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, self.kernel_3x3)
+
+        red_pixels = cv2.countNonZero(red_mask)
+
+        # Also check for white text contrast inside the button area
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        _, white_mask = cv2.threshold(gray, 215, 255, cv2.THRESH_BINARY)
+        white_pixels = cv2.countNonZero(white_mask)
+
+        # Requires a solid red button body (>= 250px) AND text contrast (>= 20px)
+        return red_pixels >= 250 and white_pixels >= 20
+
+    # ----------------------------------------------------
     # GLOBAL INTERRUPT: MODAL / NEW FISH POPUP DETECTOR
     # ----------------------------------------------------
     def detect_click_to_continue(self):
-        """Detects Legendary / Rare Fish 'Click to Continue' or 'Found New Fish' popup modal."""
         modal_roi = self.config.get("screen", {}).get("modal_continue_roi", {
             "x_ratio": 0.30,
             "y_ratio": 0.10,
@@ -138,14 +171,11 @@ class VisionDetector:
             return False
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        # 1. Golden / Yellow text banner (Found New Fish / Click to Continue)
         yellow_mask = cv2.inRange(hsv, np.array([18, 140, 150]), np.array([32, 255, 255]))
-        # 2. High brightness white text in upper banner
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         _, white_mask = cv2.threshold(gray, 235, 255, cv2.THRESH_BINARY)
 
         modal_pixels = cv2.countNonZero(yellow_mask) + cv2.countNonZero(white_mask)
-        # Trigger if significant banner pixels appear in modal area
         return modal_pixels >= 850
 
     # ----------------------------------------------------
@@ -212,29 +242,6 @@ class VisionDetector:
         })
         box = self.ratio_to_pixel_box(auto_roi)
         return self.capture_screen(box)
-
-    # ----------------------------------------------------
-    # RED CANCEL BUTTON DETECTION
-    # ----------------------------------------------------
-    def detect_red_cancel_button(self):
-        cancel_roi = self.config.get("screen", {}).get("cancel_btn_roi", {
-            "x_ratio": 0.40,
-            "y_ratio": 0.70,
-            "w_ratio": 0.20,
-            "h_ratio": 0.18
-        })
-        box = self.ratio_to_pixel_box(cancel_roi)
-        frame = self.capture_screen(box)
-
-        if frame is None or frame.size == 0:
-            return False
-
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask1 = cv2.inRange(hsv, np.array([0, 120, 100]), np.array([10, 255, 255]))
-        mask2 = cv2.inRange(hsv, np.array([170, 120, 100]), np.array([180, 255, 255]))
-        red_mask = cv2.bitwise_or(mask1, mask2)
-        red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, self.kernel_3x3)
-        return cv2.countNonZero(red_mask) >= 100
 
     # ----------------------------------------------------
     # POWER BAR GREEN PEAK DETECTION
@@ -327,7 +334,6 @@ class VisionDetector:
     # DUAL ANCHOR: TEMPLATE MATCH + RED '!' EXCLAMATION MARK
     # ----------------------------------------------------
     def _detect_exclamation_mark(self, frame):
-        """Secondary Anchor: Detects the red '!' alert icon above character/bobber."""
         if frame is None or frame.size == 0:
             return False, 0
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -350,7 +356,6 @@ class VisionDetector:
         if self.config.get("features", {}).get("lightning_flash_rejection", True) and self.is_lightning_flash(search_frame):
             return False, 0.0, {"is_detected": False, "match_score": 0.0, "rejected_flash": True}
 
-        # Check secondary exclamation mark anchor
         has_excl, excl_px = self._detect_exclamation_mark(search_frame)
 
         if self.hold_template_gray is None:
@@ -379,7 +384,6 @@ class VisionDetector:
         return is_detected, match_score, details
 
     def detect_hold_anchor(self, frame=None, force_mode=None):
-        """Unified dual-anchor detector for State 2 and State 3."""
         mode = force_mode or self.config.get("screen", {}).get("detection_mode", "auto")
         if frame is None:
             frame = self.capture_auto_hold_area() if mode == "auto" else self.capture_hold_text()
@@ -393,5 +397,4 @@ class VisionDetector:
 
 if __name__ == "__main__":
     detector = VisionDetector()
-    print("Testing detect_click_to_continue()...", detector.detect_click_to_continue())
-    print("Testing detect_hold_anchor()...", detector.detect_hold_anchor())
+    print("Testing detect_red_cancel_button():", detector.detect_red_cancel_button())

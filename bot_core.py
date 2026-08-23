@@ -1,13 +1,12 @@
 """
 Bot Core Engine for Scale Slimy Fish Auto Fishing Bot.
-Implements the 6-State FSM Architecture with Global Interrupt Handler:
+Implements the 6-State FSM Architecture:
+- Precision Casting: Uninterrupted MouseDown charge to green peak
 - Global Interrupt Layer: Auto-detects & dismisses Legendary "Click to Continue" modals
-- State 0: Streamlined IDLE (0.4s Fast Ready)
-- State 1: Precision Casting (Sub-ROI 15% + 450ms Min Gate + Morphological OPEN)
-- State 2: Dual-Anchor Sinking (Hold to fish + Red '!' Icon | Dynamic 18.0s Timeout)
-- Transition: 350ms Reaction Buffer
-- State 3: Adaptive Reeling (Zero-Drift Micro-Jitter 120ms + 3-Frame Debounce & Cancel Extension)
-- State 4: Fast Loot Reset (1.9s Recast + Click-to-Dismiss)
+- Dual-Anchor Sinking: Template Match + Red '!' Icon
+- High-Precision Cancel Button Validation in State 3
+- Zero-Drift Micro-Jitter 120ms
+- State 4 Click-to-Dismiss fast reset (1.9s)
 """
 
 import sys
@@ -47,7 +46,7 @@ class BotState(Enum):
     IDLE = "STATE 0: IDLE / READY (สแตนด์บาย Safe Zone 0.4s)"
     CASTING = "STATE 1: CASTING (ชาร์จเกจ 450ms+ -> ดับเบิ้ลเช็คโซนเขียว)"
     SINKING = "STATE 2: SINKING (เบ็ดจมน้ำ 18.0s+ & Dual-Anchor '!'/Hold)"
-    REELING = "STATE 3: REELING (กดค้างดึงปลา + Micro-Jitter 120ms & Debounce)"
+    REELING = "STATE 3: REELING (กดค้างดึงปลา + Micro-Jitter 120ms & Extension)"
     LOOT_RESET = "STATE 4: LOOT & RESET (คลิกข้ามการ์ด & วนรอบ 1.9s)"
 
 
@@ -89,7 +88,6 @@ class InputSimulator:
 
     @staticmethod
     def press_key_1():
-        """Presses key '1' to toggle tool slot 1 in Roblox."""
         user32.keybd_event(VK_KEY_1, 0, 0, 0)
         time.sleep(0.05)
         user32.keybd_event(VK_KEY_1, 0, KEYEVENTF_KEYUP, 0)
@@ -155,7 +153,6 @@ class FishingBot:
             self.stats_callback(self.stats)
 
     def check_global_interrupt(self):
-        """Global Interrupt Layer: Detects and clears Legendary 'Click to Continue' modals."""
         if not self.config.get("features", {}).get("global_interrupt_enabled", True):
             return False
 
@@ -203,7 +200,7 @@ class FishingBot:
         self.worker_thread = threading.Thread(target=self._bot_loop, daemon=True)
         self.worker_thread.start()
         mode = self.config.get("screen", {}).get("detection_mode", "auto").upper()
-        self.log(f"🚀 บอทเริ่มทำงาน (6-State Architecture & Global Interrupt | โหมด: {mode})")
+        self.log(f"🚀 บอทเริ่มทำงาน (Clean Cast & High-Precision Cancel | โหมด: {mode})")
 
     def stop(self):
         if not self.is_running:
@@ -237,18 +234,10 @@ class FishingBot:
         settle_delay = timings.get("cast_settle_delay_sec", 1.0)
         double_check = features.get("double_check_enabled", True)
 
-        # 0. Pre-Cast Validation
-        if features.get("pre_cast_validation", True):
-            if self.detector.detect_red_cancel_button():
-                self.log("⚠️ [Pre-Cast Validation] ตรวจพบสายเบ็ดยังจมน้ำอยู่ -> ส่งคลิก 1 ครั้งดึงเบ็ดกลับก่อน...")
-                InputSimulator.move_to_safe_water_zone(self.config)
-                InputSimulator.click(0.04)
-                time.sleep(1.5)
-
         # 1. ย้ายเคอร์เซอร์ไป Safe Water Zone (50%, 38%)
         InputSimulator.move_to_safe_water_zone(self.config)
 
-        # 2. เริ่มกดค้างเพื่อชาร์จเกจ
+        # 2. เริ่มกดค้างเพื่อชาร์จเกจ (Uninterrupted Charge)
         InputSimulator.mouse_down()
         start_ts = time.perf_counter()
         vision_success = False
@@ -304,7 +293,6 @@ class FishingBot:
         reaction_delay = (timings.get("bite_reaction_delay_ms", 350) or 350) / 1000.0
         recast_delay = timings.get("recast_delay_sec", 1.9)
         jitter_interval = (timings.get("jitter_interval_ms", 120) or 120) / 1000.0
-        debounce_frames_req = timings.get("debounce_frames", 3)
         scan_interval = timings.get("scan_interval_sec", 0.025)
         anti_afk_interval = timings.get("anti_afk_interval_sec", 120.0)
         cancel_extension_max = timings.get("reeling_cancel_extension_sec", 2.5)
@@ -360,8 +348,7 @@ class FishingBot:
                         break
 
                     # Check Global Interrupt during sinking
-                    if self.check_global_interrupt():
-                        pass
+                    self.check_global_interrupt()
 
                     elapsed_sink = time.time() - start_sink
                     sink_pct = min(100.0, (elapsed_sink / sinking_timeout) * 100.0)

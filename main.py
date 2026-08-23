@@ -2,7 +2,7 @@
 Compact Side-Panel GUI Application for Scale Slimy Fish Auto Fishing Bot.
 Optimized for Side-by-Side Gaming (440x680px) with:
 - Always on Top (ปักหมุดลอยบนจอคู่กับ Roblox)
-- Real-Time Live Rod Status LED (🔴 เบ็ดในน้ำ / 🟢 พร้อมเหวี่ยง)
+- Real-Time Live Rod Status LED (🔴 เบ็ดในน้ำ / 🟢 ถือเบ็ดบนบก)
 - Dual Live Camera Monitors (Power Bar & Hold Text)
 - Dynamic Rod Calculator (Depth & Strength)
 - Full Advanced Settings Tab (Sliders & Safety Switches)
@@ -216,7 +216,6 @@ class FishingBotApp:
             bg=ModernColors.CARD_BG
         ).pack(side="left")
 
-        # Always on Top Checkbutton
         self.var_ontop = tk.BooleanVar(value=True)
         self.root.attributes("-topmost", True)
         tk.Checkbutton(
@@ -271,10 +270,10 @@ class FishingBotApp:
         )
         self.state_badge.pack(side="left")
 
-        # Live Rod Status LED Badge
+        # Live Rod Status LED Badge (Accurately differentiates Holding vs Fishing)
         self.rod_led_lbl = tk.Label(
             b_top,
-            text="🟢 บนบก (Ready)",
+            text="🟢 ถือเบ็ดบนบก (Ready)",
             font=("Segoe UI", 8, "bold"),
             fg=ModernColors.ACCENT_GREEN,
             bg=ModernColors.CARD_BG
@@ -340,11 +339,7 @@ class FishingBotApp:
         self.build_tab_settings()
         self.build_tab_logs()
 
-    # ----------------------------------------------------
-    # TAB 1: COMPACT MAIN & DUAL MONITORS
-    # ----------------------------------------------------
     def build_tab_monitor(self):
-        # 1. Rod Calculator Compact Card
         rod_card = tk.LabelFrame(
             self.tab_monitor,
             text=" 🎣 สเปกคันเบ็ด (Rod Physics) ",
@@ -391,7 +386,7 @@ class FishingBotApp:
             command=self.open_point_selector
         ).pack(side="right")
 
-        # 2. Dual Camera Monitors (Side-by-Side, ~190x100px)
+        # Dual Camera Monitors (Side-by-Side, ~190x95px)
         cam_frame = tk.Frame(self.tab_monitor, bg=ModernColors.BG_DARK)
         cam_frame.pack(fill="both", expand=True, padx=4, pady=2)
 
@@ -452,14 +447,10 @@ class FishingBotApp:
             command=lambda: self.open_roi_selector("Hold to fish", "hold_roi")
         ).pack(side="right", fill="x", expand=True, padx=(1, 0))
 
-    # ----------------------------------------------------
-    # TAB 2: COMPACT FULL SETTINGS
-    # ----------------------------------------------------
     def build_tab_settings(self):
         container = tk.Frame(self.tab_settings, bg=ModernColors.BG_DARK, padx=4, pady=2)
         container.pack(fill="both", expand=True)
 
-        # Timings Card
         s1 = tk.LabelFrame(
             container,
             text=" ⏱️ เวลาและจังหวะ (Timings) ",
@@ -471,7 +462,6 @@ class FishingBotApp:
         )
         s1.pack(fill="x", pady=2)
 
-        # Min Gate
         current_gate = int(self.config.get("timings", {}).get("min_charge_gate_ms", 450) or 450)
         self.gate_val_lbl = tk.Label(s1, text=f"⚡ Min Charge Gate: {current_gate} ms", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.gate_val_lbl.pack(anchor="w")
@@ -484,7 +474,6 @@ class FishingBotApp:
         self.gate_slider.set(current_gate)
         self.gate_slider.pack(fill="x")
 
-        # Recast Delay
         current_recast = self.config.get("timings", {}).get("recast_delay_sec", 1.9)
         self.recast_val_lbl = tk.Label(s1, text=f"⏳ Fast Recast Delay: {current_recast:.1f} s", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.recast_val_lbl.pack(anchor="w")
@@ -497,7 +486,6 @@ class FishingBotApp:
         self.recast_slider.set(current_recast)
         self.recast_slider.pack(fill="x")
 
-        # Bite Reaction Delay
         current_reaction = int(self.config.get("timings", {}).get("bite_reaction_delay_ms", 350) or 350)
         self.reaction_val_lbl = tk.Label(s1, text=f"🐟 Reaction Delay: {current_reaction} ms", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.reaction_val_lbl.pack(anchor="w")
@@ -510,7 +498,6 @@ class FishingBotApp:
         self.reaction_slider.set(current_reaction)
         self.reaction_slider.pack(fill="x")
 
-        # Template Threshold
         current_tpl_score = int(self.config.get("thresholds", {}).get("hold_template_match_threshold", 0.65) * 100)
         self.tpl_val_lbl = tk.Label(s1, text=f"🎯 Template Match: {current_tpl_score}%", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.tpl_val_lbl.pack(anchor="w")
@@ -523,7 +510,6 @@ class FishingBotApp:
         self.tpl_slider.set(current_tpl_score)
         self.tpl_slider.pack(fill="x")
 
-        # Features Card
         s2 = tk.LabelFrame(
             container,
             text=" 🛡️ สวิตช์ฟังก์ชันความปลอดภัย ",
@@ -571,9 +557,6 @@ class FishingBotApp:
             command=self.reset_factory_defaults
         ).pack(fill="x", pady=3)
 
-    # ----------------------------------------------------
-    # TAB 3: LIVE LOGS
-    # ----------------------------------------------------
     def build_tab_logs(self):
         log_frame = tk.Frame(self.tab_logs, bg=ModernColors.CARD_BG, padx=4, pady=4)
         log_frame.pack(fill="both", expand=True, padx=4, pady=2)
@@ -639,11 +622,11 @@ class FishingBotApp:
                         txt_h = f"🟢 พบข้อความ! ({sc}%)" if t_ok else f"⚪ สแกนหา... ({sc}%)"
                         self.status_lbl_hold.config(text=txt_h, fg=ModernColors.ACCENT_GREEN if t_ok else ModernColors.TEXT_MUTED)
 
-                        # Update Cancel LED
+                        # Update Rod Status LED Badge (Accurately differentiates Holding vs Fishing)
                         if can_ok:
-                            self.rod_led_lbl.config(text="🔴 เบ็ดในน้ำ (Cancel)", fg=ModernColors.ACCENT_RED)
+                            self.rod_led_lbl.config(text="🔴 เบ็ดในน้ำ (Fishing)", fg=ModernColors.ACCENT_RED)
                         else:
-                            self.rod_led_lbl.config(text="🟢 บนบก (Ready)", fg=ModernColors.ACCENT_GREEN)
+                            self.rod_led_lbl.config(text="🟢 ถือเบ็ดบนบก (Ready)", fg=ModernColors.ACCENT_GREEN)
 
                     self.root.after(0, _update_ui)
                 except Exception as e:
@@ -720,7 +703,7 @@ class FishingBotApp:
                 "global_interrupt_enabled": True,
                 "anti_afk_enabled": True,
                 "dynamic_green_detection": True,
-                "pre_cast_validation": True,
+                "pre_cast_validation": False,
                 "lightning_flash_rejection": True,
                 "double_check_enabled": True,
                 "failsafe_auto_recovery": True
