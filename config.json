@@ -1,56 +1,56 @@
 {
   "screen": {
-    "detection_mode": "manual",
+    "detection_mode": "auto",
     "use_normalized_roi": true,
     "template_path": "template_hold.png",
     "mouse_target": {
-      "x_ratio": 0.5,
+      "x_ratio": 0.50,
       "y_ratio": 0.38
     },
     "hold_roi": {
-      "x_ratio": 0.6677,
-      "y_ratio": 0.5046,
-      "w_ratio": 0.0797,
-      "h_ratio": 0.0657
+      "x_ratio": 0.35,
+      "y_ratio": 0.40,
+      "w_ratio": 0.30,
+      "h_ratio": 0.15
     },
     "cast_bar_roi": {
-      "x_ratio": 0.8313,
-      "y_ratio": 0.2917,
-      "w_ratio": 0.026,
-      "h_ratio": 0.1991
+      "x_ratio": 0.77,
+      "y_ratio": 0.22,
+      "w_ratio": 0.048,
+      "h_ratio": 0.35
     },
     "auto_cast_search_roi": {
       "x_ratio": 0.65,
       "y_ratio": 0.15,
-      "w_ratio": 0.3,
-      "h_ratio": 0.6
+      "w_ratio": 0.30,
+      "h_ratio": 0.60
     },
     "auto_hold_search_roi": {
       "x_ratio": 0.25,
       "y_ratio": 0.25,
-      "w_ratio": 0.5,
+      "w_ratio": 0.50,
       "h_ratio": 0.45
     },
     "cancel_btn_roi": {
-      "x_ratio": 0.4,
-      "y_ratio": 0.7,
-      "w_ratio": 0.2,
+      "x_ratio": 0.40,
+      "y_ratio": 0.70,
+      "w_ratio": 0.20,
       "h_ratio": 0.18
     }
   },
   "rod_stats": {
-    "depth": 280.0,
-    "strength": 50.0
+    "depth": 280,
+    "strength": 90
   },
   "timings": {
     "pre_cast_delay_sec": 0.2,
-    "min_charge_gate_sec": 0.45,
+    "min_charge_gate_sec": 0.30,
     "charge_backup_sec": 1.4,
     "cast_poll_interval_sec": 0.005,
     "cast_settle_delay_sec": 1.0,
-    "sinking_timeout_sec": 14.0,
+    "sinking_timeout_sec": null,
     "bite_reaction_delay_sec": 0.35,
-    "reel_hold_duration_sec": 9.7,
+    "reel_hold_duration_sec": 5.6,
     "reeling_cancel_extension_sec": 2.5,
     "reeling_max_timeout_sec": 20.0,
     "jitter_interval_sec": 0.12,
@@ -62,16 +62,8 @@
     "hold_template_match_threshold": 0.65,
     "cast_peak_subroi_ratio": 0.15,
     "cast_green_density_threshold": 0.18,
-    "cast_lower_green": [
-      35,
-      120,
-      100
-    ],
-    "cast_upper_green": [
-      85,
-      255,
-      255
-    ],
+    "cast_lower_green": [35, 120, 100],
+    "cast_upper_green": [85, 255, 255],
     "hold_color_min_brightness": 130,
     "hold_pixel_density_threshold": 0.006,
     "flash_brightness_threshold": 235
@@ -81,7 +73,8 @@
     "dynamic_green_detection": true,
     "pre_cast_validation": true,
     "lightning_flash_rejection": true,
-    "double_check_enabled": true
+    "double_check_enabled": true,
+    "failsafe_auto_recovery": true
   },
   "hotkeys": {
     "start": "F6",

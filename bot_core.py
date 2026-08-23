@@ -1,10 +1,12 @@
 """
 Bot Core Engine for Scale Slimy Fish Auto Fishing Bot.
 Implements the 5-State Closed-Loop Engine with:
-- State 4 Click Dismiss: Left Click tap during Loot & Reset to skip cards and enter casting fast
+- Dynamic Sinking Timeout (Calculated automatically from Depth: (Depth/12.0)+5.0s)
+- Adaptive Min Charge Gate (0.30s for fast-responding high-tier rods)
+- Failsafe Auto-Recovery on Consecutive Timeouts (Unequip/Re-equip Slot 1)
+- State 4 Click-to-Dismiss (Instant Loot Skip & Fast Cast)
 - Triple Double-Check Validation (State 1 Green Peak, State 2 Template Match, State 3 Reeling Extension)
-- Dynamic Rod Depth/Strength Reeling Hold Duration
-- Real-Time Progress & Telemetry Callbacks to UI
+- Dynamic Rod Reeling Duration Formula
 """
 
 import sys
@@ -35,6 +37,7 @@ MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 MOUSEEVENTF_MOVE = 0x0001
 KEYEVENTF_KEYUP = 0x0002
+VK_KEY_1 = 0x31
 
 user32 = ctypes.windll.user32
 
@@ -42,7 +45,7 @@ user32 = ctypes.windll.user32
 class BotState(Enum):
     IDLE = "STATE 0: IDLE / READY (สแตนด์บาย Safe Zone)"
     CASTING = "STATE 1: CASTING (ชาร์จเกจพลังงาน -> ดับเบิ้ลเช็คโซนเขียว)"
-    SINKING = "STATE 2: SINKING (เบ็ดจมน้ำ 0->280m & ดับเบิ้ลเช็คปลาติด)"
+    SINKING = "STATE 2: SINKING (เบ็ดจมน้ำตาม Depth & ดับเบิ้ลเช็คปลาติด)"
     REELING = "STATE 3: REELING (กดค้างดึงปลา + ดับเบิ้ลเช็คปุ่ม Cancel)"
     LOOT_RESET = "STATE 4: LOOT & RESET (คลิกข้ามการ์ดปลา & วนรอบเหวี่ยงเบ็ด)"
 
@@ -84,6 +87,13 @@ class InputSimulator:
         user32.mouse_event(MOUSEEVENTF_MOVE, -1, 0, 0, 0)
 
     @staticmethod
+    def press_key_1():
+        """Presses key '1' to toggle tool slot 1 in Roblox."""
+        user32.keybd_event(VK_KEY_1, 0, 0, 0)
+        time.sleep(0.05)
+        user32.keybd_event(VK_KEY_1, 0, KEYEVENTF_KEYUP, 0)
+
+    @staticmethod
     def micro_anti_afk():
         user32.mouse_event(MOUSEEVENTF_MOVE, 2, 0, 0, 0)
         time.sleep(0.02)
@@ -113,6 +123,7 @@ class FishingBot:
             "uptime_seconds": 0
         }
 
+        self.consecutive_sinking_timeouts = 0
         self.last_anti_afk_time = time.time()
 
     def log(self, message):
@@ -149,6 +160,14 @@ class FishingBot:
         override = self.config.get("timings", {}).get("reel_hold_duration_sec", None)
         return override if override is not None else max(3.0, calc_duration)
 
+    def calculate_sinking_timeout(self):
+        """Calculates dynamic sinking timeout based on rod depth."""
+        rod = self.config.get("rod_stats", {"depth": 280, "strength": 90})
+        depth = float(rod.get("depth", 280))
+        calc_timeout = round(max(14.0, (depth / 12.0) + 5.0), 1)
+        override = self.config.get("timings", {}).get("sinking_timeout_sec", None)
+        return override if override is not None else calc_timeout
+
     def reload_config(self):
         self.detector.config = self.detector.load_config()
         self.config = self.detector.config
@@ -161,13 +180,14 @@ class FishingBot:
 
         self.reload_config()
         self.is_running = True
+        self.consecutive_sinking_timeouts = 0
         self.stats["start_time"] = time.time()
         self.last_anti_afk_time = time.time()
 
         self.worker_thread = threading.Thread(target=self._bot_loop, daemon=True)
         self.worker_thread.start()
         mode = self.config.get("screen", {}).get("detection_mode", "auto").upper()
-        self.log(f"🚀 บอทเริ่มทำงาน (State 4 Click-Dismiss Engine | โหมด: {mode})")
+        self.log(f"🚀 บอทเริ่มทำงาน (Dynamic Depth & Adaptive Engine | โหมด: {mode})")
 
     def stop(self):
         if not self.is_running:
@@ -179,10 +199,26 @@ class FishingBot:
         self.set_progress(0, "ระบบหยุดการทำงาน")
         self.log("⏹️ บอทหยุดการทำงาน (Stopped)")
 
+    def _perform_failsafe_recovery(self):
+        """Emergency recovery: Unequips and Re-equips tool slot 1 and clicks water."""
+        self.log("🚨 [Failsafe Auto-Recovery] เกิด Timeout ติดต่อกัน 2 ครั้ง -> ดำเนินการรีเซ็ตคันเบ็ด (Unequip/Re-equip Slot 1)...")
+        self.set_progress(100.0, "🚨 Failsafe: กำลังรีเซ็ตคันเบ็ด Slot 1...")
+        InputSimulator.move_to_safe_water_zone(self.config)
+        InputSimulator.click(0.04)
+        time.sleep(0.5)
+        # Toggle unequip slot 1
+        InputSimulator.press_key_1()
+        time.sleep(1.0)
+        # Toggle re-equip slot 1
+        InputSimulator.press_key_1()
+        time.sleep(1.5)
+        self.consecutive_sinking_timeouts = 0
+        self.log("✅ [Failsafe Recovery] รีเซ็ตคันเบ็ดและตัวละครเรียบร้อยแล้ว พร้อมเริ่มรอบใหม่")
+
     def _execute_casting_state(self):
         timings = self.config.get("timings", {})
         features = self.config.get("features", {})
-        min_gate = timings.get("min_charge_gate_sec", 0.45)
+        min_gate = timings.get("min_charge_gate_sec", 0.30)
         backup_timeout = timings.get("charge_backup_sec", 1.4)
         poll_interval = timings.get("cast_poll_interval_sec", 0.005)
         settle_delay = timings.get("cast_settle_delay_sec", 1.0)
@@ -205,7 +241,7 @@ class FishingBot:
         vision_success = False
         last_green_ratio = 0.0
 
-        # 3. High-Frequency Polling Loop with Double-Check
+        # 3. High-Frequency Polling Loop with Adaptive Gate
         while (time.perf_counter() - start_ts) < backup_timeout:
             if not self.is_running:
                 break
@@ -251,7 +287,6 @@ class FishingBot:
         timings = self.config.get("timings", {})
         features = self.config.get("features", {})
 
-        sinking_timeout = timings.get("sinking_timeout_sec", 14.0)
         reaction_delay = timings.get("bite_reaction_delay_sec", 0.35)
         recast_delay = timings.get("recast_delay_sec", 1.8)
         jitter_interval = timings.get("jitter_interval_sec", 0.12)
@@ -288,10 +323,13 @@ class FishingBot:
                 self._execute_casting_state()
 
                 # ====================================================
-                # STATE 2: SINKING (Depth: 0m -> Max Depth with Double-Check)
+                # STATE 2: SINKING (Dynamic Depth Sinking & Double-Check)
                 # ====================================================
                 self.set_state(BotState.SINKING)
-                self.log("🌊 [State 2: Sinking] สายเบ็ดกำลังจมลงสู่ใต้ทะเล (สแกนหาข้อความ 'Hold to fish')...")
+                sinking_timeout = self.calculate_sinking_timeout()
+                depth_val = self.config.get("rod_stats", {}).get("depth", 280)
+                self.log(f"🌊 [State 2: Sinking] สายเบ็ดกำลังจมลงสู่ใต้ทะเล (Depth: {depth_val}m | Dynamic Timeout: {sinking_timeout}s)...")
+                
                 start_sink = time.time()
                 hooked = False
                 last_score = 0.0
@@ -306,7 +344,7 @@ class FishingBot:
                     is_text, details = self.detector.detect_hold_text()
                     last_score = details.get("match_score", 0.0)
                     
-                    self.set_progress(sink_pct, f"สายเบ็ดกำลังจมน้ำ... ({elapsed_sink:.1f}s / {sinking_timeout:.1f}s) | Match: {int(last_score*100)}%")
+                    self.set_progress(sink_pct, f"สายเบ็ดกำลังจมน้ำ (Depth: {depth_val}m)... ({elapsed_sink:.1f}s / {sinking_timeout:.1f}s) | Match: {int(last_score*100)}%")
 
                     if is_text:
                         if double_check:
@@ -322,11 +360,19 @@ class FishingBot:
                     time.sleep(scan_interval)
 
                 if not hooked:
-                    self.log(f"⚠️ [State 2 Timeout] ครบ {sinking_timeout}s ไม่พบปลาติดเบ็ด -> ส่งคลิก 1 ครั้งเพื่อรีเซ็ตแล้วเริ่มใหม่")
+                    self.consecutive_sinking_timeouts += 1
+                    self.log(f"⚠️ [State 2 Timeout #{self.consecutive_sinking_timeouts}] ครบ {sinking_timeout}s ไม่พบปลาติดเบ็ด -> ส่งคลิกตัดสาย 1 ครั้ง")
                     InputSimulator.move_to_safe_water_zone(self.config)
                     InputSimulator.click(duration=0.04)
                     time.sleep(1.2)
+
+                    # Trigger Failsafe Auto-Recovery if timed out 2 times in a row
+                    if features.get("failsafe_auto_recovery", True) and self.consecutive_sinking_timeouts >= 2:
+                        self._perform_failsafe_recovery()
                     continue
+
+                # Reset timeout streak on successful hook
+                self.consecutive_sinking_timeouts = 0
 
                 # ====================================================
                 # STATE 2 -> STATE 3 TRANSITION: BITE REACTION DELAY
@@ -390,14 +436,11 @@ class FishingBot:
                 self.set_state(BotState.LOOT_RESET)
                 self.log(f"⏳ [State 4: Loot & Reset] รอการ์ดแสดงผล ({recast_delay}s)... ส่งคลิกซ้าย 1 ครั้งเพื่อข้ามการ์ดและเตรียมเหวี่ยงเบ็ด")
 
-                # 1. รอการ์ดปลาเด้งขึ้นมาเล็กน้อย (0.6s)
                 time.sleep(0.6)
 
-                # 2. ส่งคำสั่งคลิกซ้าย 1 ครั้งตรง Safe Water Zone เพื่อปิดการ์ดปลาทันที
                 InputSimulator.move_to_safe_water_zone(self.config)
                 InputSimulator.click(duration=0.04)
 
-                # 3. รอเซ็ตตัวช่วงสั้นๆ ที่เหลือเพื่อให้เบ็ดพร้อมเหวี่ยง
                 remaining_recast = max(0.4, recast_delay - 0.6)
                 start_loot = time.time()
                 while time.time() - start_loot < remaining_recast:

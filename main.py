@@ -4,10 +4,10 @@ Features:
 - Enlarged High-Resolution Preview Monitors (340x130px)
 - Real-Time Live Activity Banner & Progress Bar (Sub-second status tracking)
 - Telemetry Live Logs with Exact Metrics & Milestones
-- Dynamic Rod Calculator (Depth & Strength -> Auto Reel Duration)
+- Dynamic Rod Calculator (Depth & Strength -> Auto Reel Duration & Dynamic Sinking Timeout)
+- Failsafe Auto-Recovery on Consecutive Timeouts
 - Dedicated Reeling Hold Duration (Eliminated Premature Release Desync)
-- Pre-Cast State Validation & Inventory Full Detection
-- Template Matching Text Detection Engine (Zero False Positives)
+- Pre-Cast State Validation & Triple Double-Check Engine
 """
 
 import sys
@@ -152,7 +152,7 @@ class FullscreenFrozenSelector(tk.Toplevel):
 class FishingBotApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Scale Slimy Fish — Telemetry Dashboard & Auto Bot")
+        self.root.title("Scale Slimy Fish — Dynamic Telemetry Dashboard")
         self.root.geometry("800x1060")
         self.root.minsize(760, 920)
         self.root.configure(bg=ModernColors.BG_DARK)
@@ -206,7 +206,7 @@ class FishingBotApp:
 
         title_lbl = tk.Label(
             header,
-            text="🎣 SCALE SLIMY FISH — TELEMETRY & AUTO BOT",
+            text="🎣 SCALE SLIMY FISH — DYNAMIC AUTO BOT",
             font=("Segoe UI", 15, "bold"),
             fg=ModernColors.ACCENT_BLUE,
             bg=ModernColors.CARD_BG
@@ -215,7 +215,7 @@ class FishingBotApp:
 
         sub_lbl = tk.Label(
             header,
-            text="Real-Time Telemetry Dashboard | 1.8s Fast Recast | Template Matching | Enlarge Live Vision",
+            text="Dynamic Depth Physics | Triple Double-Check | Adaptive Gate | 1.8s Fast Recast",
             font=("Segoe UI", 9),
             fg=ModernColors.TEXT_MUTED,
             bg=ModernColors.CARD_BG
@@ -238,7 +238,6 @@ class FishingBotApp:
         )
         self.state_badge.pack(anchor="w")
 
-        # Real-time Activity Message Label
         self.activity_var = tk.StringVar(value="พร้อมทำงาน (กด F6 เพื่อเริ่มต้น)")
         self.activity_lbl = tk.Label(
             banner_frame,
@@ -249,7 +248,6 @@ class FishingBotApp:
         )
         self.activity_lbl.pack(anchor="w", pady=(1, 4))
 
-        # Real-time Visual Progress Bar
         style = ttk.Style()
         style.theme_use('default')
         style.configure("Custom.Horizontal.TProgressbar", troughcolor=ModernColors.BORDER, background=ModernColors.ACCENT_BLUE, thickness=8)
@@ -383,7 +381,7 @@ class FishingBotApp:
         # ----------------------------------------------------
         rod_card = tk.LabelFrame(
             self.root,
-            text=" 🎣 คำนวณเวลาดึงปลาตามสเปกคันเบ็ด (Dynamic Rod Stats) & Safe Zone ",
+            text=" 🎣 เครื่องคิดเลขสเปกคันเบ็ดไดนามิก (Dynamic Rod Calculator) & Safe Zone ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_PURPLE,
             bg=ModernColors.CARD_BG,
@@ -392,36 +390,47 @@ class FishingBotApp:
         )
         rod_card.pack(fill="x", padx=16, pady=2)
 
-        rod_row = tk.Frame(rod_card, bg=ModernColors.CARD_BG)
-        rod_row.pack(fill="x", pady=1)
+        rod_row1 = tk.Frame(rod_card, bg=ModernColors.CARD_BG)
+        rod_row1.pack(fill="x", pady=1)
 
         # Depth Input
-        tk.Label(rod_row, text="Depth (m):", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left", padx=(0, 2))
-        self.depth_entry = tk.Entry(rod_row, width=6, bg="#11111b", fg=ModernColors.ACCENT_YELLOW, insertbackground="white", font=("Segoe UI", 9, "bold"))
+        tk.Label(rod_row1, text="Depth (m):", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left", padx=(0, 2))
+        self.depth_entry = tk.Entry(rod_row1, width=6, bg="#11111b", fg=ModernColors.ACCENT_YELLOW, insertbackground="white", font=("Segoe UI", 9, "bold"))
         current_depth = self.config.get("rod_stats", {}).get("depth", 280)
         self.depth_entry.insert(0, str(current_depth))
         self.depth_entry.pack(side="left", padx=(0, 8))
         self.depth_entry.bind("<KeyRelease>", self.on_rod_stat_change)
 
         # Strength Input
-        tk.Label(rod_row, text="Strength:", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left", padx=(0, 2))
-        self.str_entry = tk.Entry(rod_row, width=6, bg="#11111b", fg=ModernColors.ACCENT_GREEN, insertbackground="white", font=("Segoe UI", 9, "bold"))
+        tk.Label(rod_row1, text="Strength:", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left", padx=(0, 2))
+        self.str_entry = tk.Entry(rod_row1, width=6, bg="#11111b", fg=ModernColors.ACCENT_GREEN, insertbackground="white", font=("Segoe UI", 9, "bold"))
         current_str = self.config.get("rod_stats", {}).get("strength", 90)
         self.str_entry.insert(0, str(current_str))
         self.str_entry.pack(side="left", padx=(0, 8))
         self.str_entry.bind("<KeyRelease>", self.on_rod_stat_change)
 
-        # Calculated Time Label
-        calc_sec = round((float(current_depth) / max(1.0, float(current_str))) * 1.65 + 0.5, 1)
-        self.calc_time_lbl = tk.Label(rod_row, text=f"⚡ เวลาดึงปลา: {calc_sec}s (คำนวณอัตโนมัติ)", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_BLUE, bg=ModernColors.CARD_BG)
-        self.calc_time_lbl.pack(side="left", padx=4)
-
-        # Safe Zone Buttons
+        # Safe Zone Button
         tk.Button(
-            rod_row, text="🎯 คลิกเลือก Safe Zone", font=("Segoe UI", 8, "bold"),
+            rod_row1, text="🎯 คลิกเลือก Safe Zone", font=("Segoe UI", 8, "bold"),
             bg=ModernColors.BORDER, fg=ModernColors.ACCENT_PURPLE, relief="flat",
             command=self.open_point_selector
         ).pack(side="right", padx=2)
+
+        # Computed Metrics Display Row
+        rod_row2 = tk.Frame(rod_card, bg=ModernColors.CARD_BG)
+        rod_row2.pack(fill="x", pady=2)
+
+        calc_sec = round((float(current_depth) / max(1.0, float(current_str))) * 1.65 + 0.5, 1)
+        calc_sink = round(max(14.0, (float(current_depth) / 12.0) + 5.0), 1)
+
+        self.calc_time_lbl = tk.Label(
+            rod_row2,
+            text=f"⚡ เวลาดึงปลา (Reel): {calc_sec}s  |  🌊 เวลาจมน้ำสูงสุด (Sinking Timeout): {calc_sink}s (คำนวณอัตโนมัติ)",
+            font=("Segoe UI", 8, "bold"),
+            fg=ModernColors.ACCENT_BLUE,
+            bg=ModernColors.CARD_BG
+        )
+        self.calc_time_lbl.pack(anchor="w")
 
         # ----------------------------------------------------
         # 6. TIMING & SENSITIVITY SETTINGS
@@ -579,7 +588,8 @@ class FishingBotApp:
             d = float(self.depth_entry.get() or 280)
             s = float(self.str_entry.get() or 90)
             calc_sec = round((d / max(1.0, s)) * 1.65 + 0.5, 1)
-            self.calc_time_lbl.config(text=f"⚡ เวลาดึงปลา: {calc_sec}s (คำนวณอัตโนมัติ)")
+            calc_sink = round(max(14.0, (d / 12.0) + 5.0), 1)
+            self.calc_time_lbl.config(text=f"⚡ เวลาดึงปลา (Reel): {calc_sec}s  |  🌊 เวลาจมน้ำสูงสุด (Sinking Timeout): {calc_sink}s (คำนวณอัตโนมัติ)")
             if "rod_stats" not in self.config:
                 self.config["rod_stats"] = {}
             self.config["rod_stats"]["depth"] = d
@@ -655,7 +665,7 @@ class FishingBotApp:
     def start_bot(self):
         if not self.bot.is_running:
             self.bot.start()
-            self.state_var.set("สถานะ: กำลังทำงาน (5-State Engine Active)...")
+            self.state_var.set("สถานะ: กำลังทำงาน (Dynamic Engine Active)...")
             self.state_badge.config(fg=ModernColors.ACCENT_GREEN)
 
     def stop_bot(self):
