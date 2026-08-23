@@ -2,10 +2,16 @@
 Compact Side-Panel GUI Application for Scale Slimy Fish Auto Fishing Bot.
 Optimized for Side-by-Side Gaming (440x680px) with:
 - Always on Top (ปักหมุดลอยบนจอคู่กับ Roblox)
+- Screen Overlay HUD (กรอบโปร่งใสคลิกทะลุได้ 100% แสดงว่าบอทกำลังมองอะไรอยู่บนจอเกมจริง)
+- Live Camera Computer Vision HUD Annotations (วาดกรอบตรวจจับในช่องกล้องสด)
+- Auto Window Focus on F6 / Start (เลื่อนไป Safe Zone และคลิกซ้าย 1 ครั้งเพื่อโฟกัสหน้าต่างเกมก่อนเริ่ม)
 - Real-Time Live Rod Status LED (🔴 เบ็ดในน้ำ / 🟢 ถือเบ็ดบนบก)
 - High-Performance Hold to Fish & Continue Detection (Decoupled Template & Search ROI)
 - Click to Continue Modal Handler (Legendary Fish Unlock)
 - Inventory Full Warning Detector (Auto-Pause with Red Banner)
+- Reeling Hold Duration Slider & Cancel Auto-Extension Toggle Switch
+- State 2 Power Bar Validation (Auto-Recovery & Loop back to State 1 if cast failed)
+- Sinking Timeout Slider (5.0s - 90.0s) & 1ms OS Timer
 - Dual Live Camera Monitors (Power Bar & Hold Text)
 - Dynamic Rod Calculator (Depth & Strength)
 - Full Advanced Settings Tab (Sliders & Safety Switches)
@@ -57,6 +63,91 @@ class ModernColors:
     TEXT_MUTED = "#a6adc8"
     BORDER = "#313244"
     PREVIEW_BG = "#11111b"
+
+
+class ScreenOverlayHUD:
+    """
+    Transparent, click-through overlay window on the desktop that shows
+    stylish bounding boxes and scanner labels around where the bot is looking.
+    """
+    def __init__(self, root, config):
+        self.root = root
+        self.config = config
+        self.toplevel = tk.Toplevel(root)
+        self.toplevel.title("SlimyBotOverlayHUD")
+        self.toplevel.attributes("-fullscreen", True)
+        self.toplevel.attributes("-topmost", True)
+        
+        # Transparent background color
+        self.trans_color = "#000001"
+        self.toplevel.attributes("-transparentcolor", self.trans_color)
+        self.toplevel.config(bg=self.trans_color)
+        self.toplevel.overrideredirect(True)
+
+        # Make window click-through on Windows (WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+        if sys.platform == "win32":
+            try:
+                hwnd = ctypes.windll.user32.GetParent(self.toplevel.winfo_id()) or self.toplevel.winfo_id()
+                style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+                ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x20 | 0x80000 | 0x08000000 | 0x80)
+            except Exception as e:
+                print(f"[Overlay] Click-through setup error: {e}")
+
+        self.canvas = tk.Canvas(self.toplevel, bg=self.trans_color, highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+
+        self.sw = self.toplevel.winfo_screenwidth()
+        self.sh = self.toplevel.winfo_screenheight()
+        self.is_enabled = self.config.get("features", {}).get("screen_overlay_hud", True)
+
+    def set_enabled(self, enabled: bool):
+        self.is_enabled = enabled
+        if not enabled:
+            self.clear()
+
+    def clear(self):
+        try:
+            self.canvas.delete("all")
+        except:
+            pass
+
+    def update_target(self, roi_ratio, color="#50fa7b", label=""):
+        if not self.is_enabled or roi_ratio is None:
+            self.clear()
+            return
+
+        self.clear()
+        try:
+            x1 = int(roi_ratio.get("x_ratio", 0) * self.sw)
+            y1 = int(roi_ratio.get("y_ratio", 0) * self.sh)
+            w = int(roi_ratio.get("w_ratio", 0) * self.sw)
+            h = int(roi_ratio.get("h_ratio", 0) * self.sh)
+            x2 = x1 + w
+            y2 = y1 + h
+
+            # Draw outer bounding box
+            self.canvas.create_rectangle(x1 - 3, y1 - 3, x2 + 3, y2 + 3, outline=color, width=2)
+
+            # Corner accents
+            corner_len = max(6, min(16, min(w, h) // 3))
+            self.canvas.create_line(x1 - 3, y1 - 3, x1 - 3 + corner_len, y1 - 3, fill="white", width=3)
+            self.canvas.create_line(x1 - 3, y1 - 3, x1 - 3, y1 - 3 + corner_len, fill="white", width=3)
+
+            self.canvas.create_line(x2 + 3, y1 - 3, x2 + 3 - corner_len, y1 - 3, fill="white", width=3)
+            self.canvas.create_line(x2 + 3, y1 - 3, x2 + 3, y1 - 3 + corner_len, fill="white", width=3)
+
+            self.canvas.create_line(x1 - 3, y2 + 3, x1 - 3 + corner_len, y2 + 3, fill="white", width=3)
+            self.canvas.create_line(x1 - 3, y2 + 3, x1 - 3, y2 + 3 - corner_len, fill="white", width=3)
+
+            self.canvas.create_line(x2 + 3, y2 + 3, x2 + 3 - corner_len, y2 + 3, fill="white", width=3)
+            self.canvas.create_line(x2 + 3, y2 + 3, x2 + 3, y2 + 3 - corner_len, fill="white", width=3)
+
+            # Label tag above bounding box
+            if label:
+                lbl_y = max(18, y1 - 12)
+                self.canvas.create_text(x1 + (w // 2), lbl_y, text=f"🔍 {label}", fill=color, font=("Segoe UI", 9, "bold"))
+        except Exception:
+            pass
 
 
 class FullscreenFrozenSelector(tk.Toplevel):
@@ -170,12 +261,16 @@ class FishingBotApp:
         self.config_path = "config.json"
         self.config = self.load_config()
 
+        # Initialize Desktop Transparent Overlay HUD
+        self.overlay_hud = ScreenOverlayHUD(self.root, self.config)
+
         self.bot = FishingBot(
             config_path=self.config_path,
             log_callback=self.append_log,
             state_callback=self.update_state_display,
             stats_callback=self.update_stats_display,
-            progress_callback=self.update_progress_display
+            progress_callback=self.update_progress_display,
+            overlay_callback=self.update_overlay_display
         )
 
         self.preview_cache = {}
@@ -211,6 +306,11 @@ class FishingBotApp:
         is_top = self.var_ontop.get()
         self.root.attributes("-topmost", is_top)
         self.append_log(f"📌 ปักหมุดบนหน้าจอ: {'เปิดใช้งาน' if is_top else 'ปิด'}")
+
+    def update_overlay_display(self, roi_dict, color="#50fa7b", label=""):
+        def _update():
+            self.overlay_hud.update_target(roi_dict, color, label)
+        self.root.after(0, _update)
 
     def build_ui(self):
         # 1. Compact Header
@@ -571,12 +671,19 @@ class FishingBotApp:
         s2.pack(fill="x", pady=2)
 
         features = self.config.get("features", {})
+        self.var_overlay_hud = tk.BooleanVar(value=features.get("screen_overlay_hud", True))
         self.var_interrupt = tk.BooleanVar(value=features.get("global_interrupt_enabled", True))
         self.var_inv_full = tk.BooleanVar(value=features.get("inventory_full_detection", True))
         self.var_cancel_ext = tk.BooleanVar(value=features.get("cancel_extension_enabled", True))
         self.var_double_check = tk.BooleanVar(value=features.get("double_check_enabled", True))
         self.var_lightning = tk.BooleanVar(value=features.get("lightning_flash_rejection", True))
         self.var_failsafe = tk.BooleanVar(value=features.get("failsafe_auto_recovery", True))
+
+        tk.Checkbutton(
+            s2, text="🖥️ แสดงกรอบบนหน้าจอเกม (Screen Overlay HUD)",
+            variable=self.var_overlay_hud, font=("Segoe UI", 7, "bold"), fg=ModernColors.ACCENT_GREEN, bg=ModernColors.CARD_BG,
+            selectcolor="#11111b", command=self.on_toggle_feature
+        ).pack(anchor="w")
 
         tk.Checkbutton(
             s2, text="🚨 Global Interrupt (ปิดป๊อปอัป Click to Continue)",
@@ -664,8 +771,24 @@ class FishingBotApp:
                     is_text, hold_details = self.bot.detector.detect_hold_anchor(hold_frame, force_mode=mode)
                     is_cancel = self.bot.detector.detect_red_cancel_button()
 
-                    thumb_pb = self._render_thumb(pb_frame, 190, 95)
-                    thumb_hold = self._render_thumb(hold_frame, 190, 95)
+                    # Live Computer Vision HUD Annotations
+                    pb_display = pb_frame.copy() if pb_frame is not None and pb_frame.size > 0 else None
+                    if pb_display is not None and is_green:
+                        cv2.rectangle(pb_display, (0, 0), (pb_display.shape[1]-1, pb_display.shape[0]-1), (0, 255, 0), 2)
+                        cv2.putText(pb_display, "PEAK", (4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
+
+                    hold_display = hold_frame.copy() if hold_frame is not None and hold_frame.size > 0 else None
+                    if hold_display is not None and is_text:
+                        loc = hold_details.get("location")
+                        if loc and self.bot.detector.hold_template_gray is not None:
+                            th, tw = self.bot.detector.hold_template_gray.shape[:2]
+                            cv2.rectangle(hold_display, loc, (loc[0] + tw, loc[1] + th), (0, 255, 255), 2)
+                        else:
+                            cv2.rectangle(hold_display, (0, 0), (hold_display.shape[1]-1, hold_display.shape[0]-1), (0, 255, 255), 2)
+                        cv2.putText(hold_display, "DETECTED", (4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+
+                    thumb_pb = self._render_thumb(pb_display if pb_display is not None else pb_frame, 190, 95)
+                    thumb_hold = self._render_thumb(hold_display if hold_display is not None else hold_frame, 190, 95)
 
                     score_pct = int(hold_details.get("match_score", 0.0) * 100)
                     green_pct = int(pb_details.get("green_ratio", 0.0) * 100) if "green_ratio" in pb_details else int(pb_details.get("green_pixels", 0))
@@ -776,12 +899,14 @@ class FishingBotApp:
     def on_toggle_feature(self):
         if "features" not in self.config:
             self.config["features"] = {}
+        self.config["features"]["screen_overlay_hud"] = self.var_overlay_hud.get()
         self.config["features"]["global_interrupt_enabled"] = self.var_interrupt.get()
         self.config["features"]["inventory_full_detection"] = self.var_inv_full.get()
         self.config["features"]["cancel_extension_enabled"] = self.var_cancel_ext.get()
         self.config["features"]["double_check_enabled"] = self.var_double_check.get()
         self.config["features"]["lightning_flash_rejection"] = self.var_lightning.get()
         self.config["features"]["failsafe_auto_recovery"] = self.var_failsafe.get()
+        self.overlay_hud.set_enabled(self.var_overlay_hud.get())
         self.save_config()
 
     def reset_factory_defaults(self):
@@ -803,6 +928,7 @@ class FishingBotApp:
             }
             self.config["screen"]["detection_mode"] = "auto"
             self.config["features"] = {
+                "screen_overlay_hud": True,
                 "global_interrupt_enabled": True,
                 "inventory_full_detection": True,
                 "cancel_extension_enabled": True,
@@ -819,12 +945,14 @@ class FishingBotApp:
             self.reeling_slider.set(4.2)
             self.sinking_slider.set(32.5)
             self.tpl_slider.set(65)
+            self.var_overlay_hud.set(True)
             self.var_interrupt.set(True)
             self.var_inv_full.set(True)
             self.var_cancel_ext.set(True)
             self.var_double_check.set(True)
             self.var_lightning.set(True)
             self.var_failsafe.set(True)
+            self.overlay_hud.set_enabled(True)
             messagebox.showinfo("สำเร็จ", "รีเซ็ตค่ามาตรฐานเรียบร้อยแล้ว!")
 
     def open_template_capture_selector(self):
@@ -893,6 +1021,7 @@ class FishingBotApp:
     def stop_bot(self):
         if self.bot.is_running:
             self.bot.stop()
+            self.overlay_hud.clear()
             self.state_var.set("STATE 0: IDLE (หยุดพัก)")
             self.state_badge.config(fg=ModernColors.ACCENT_RED)
             self.activity_var.set("หยุดการทำงานเรียบร้อยแล้ว")
@@ -935,6 +1064,11 @@ class FishingBotApp:
     def on_close(self):
         self.is_live_stream_active = False
         self.stop_bot()
+        try:
+            self.overlay_hud.clear()
+            self.overlay_hud.toplevel.destroy()
+        except:
+            pass
         try:
             keyboard.unhook_all_hotkeys()
         except:

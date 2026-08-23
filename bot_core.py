@@ -107,12 +107,13 @@ class InputSimulator:
 
 
 class FishingBot:
-    def __init__(self, config_path="config.json", log_callback=None, state_callback=None, stats_callback=None, progress_callback=None):
+    def __init__(self, config_path="config.json", log_callback=None, state_callback=None, stats_callback=None, progress_callback=None, overlay_callback=None):
         self.config_path = config_path
-        self.log_callback = log_callback or print
+        self.log_callback = log_callback
         self.state_callback = state_callback
         self.stats_callback = stats_callback
         self.progress_callback = progress_callback
+        self.overlay_callback = overlay_callback
 
         self.detector = VisionDetector(config_path=config_path)
         self.config = self.detector.config
@@ -149,6 +150,13 @@ class FishingBot:
         self.state = new_state
         if self.state_callback:
             self.state_callback(new_state)
+
+    def set_overlay(self, roi_dict=None, color="#50fa7b", label=""):
+        if self.overlay_callback:
+            try:
+                self.overlay_callback(roi_dict, color, label)
+            except Exception:
+                pass
 
     def set_progress(self, percent: float, sub_msg: str = "", force: bool = False):
         now = time.perf_counter()
@@ -228,6 +236,7 @@ class FishingBot:
             return
 
         self.is_running = False
+        self.set_overlay(None)
         InputSimulator.mouse_up()
         if reason == "INVENTORY_FULL":
             self.set_state(BotState.PAUSED_INVENTORY_FULL)
@@ -323,6 +332,14 @@ class FishingBot:
         double_check = features.get("double_check_enabled", True)
 
         try:
+            # 🎯 Initial Focus: Move to Safe Zone and Left-Click 1 time to focus game window
+            self.log("🎯 [Initial Focus] เลื่อนเมาส์ไปยัง Safe Water Zone และคลิกซ้าย 1 ครั้งเพื่อโฟกัสหน้าต่างเกมก่อนเริ่ม...")
+            self.set_progress(0, "กำลังโฟกัสหน้าต่างเกม (Safe Zone 50%, 38%)...")
+            InputSimulator.move_to_safe_water_zone(self.config)
+            time.sleep(0.1)
+            InputSimulator.click(0.04)
+            time.sleep(0.4)
+
             while self.is_running:
                 # 0. Global Pre-Check (Click to Continue & Inventory Full)
                 if self.check_global_interrupt():
@@ -340,6 +357,7 @@ class FishingBot:
                 # STATE 0: IDLE / READY (0.4s Fast Standby)
                 # ====================================================
                 self.set_state(BotState.IDLE)
+                self.set_overlay(None)
                 self.set_progress(0, "เตรียมความพร้อมตัวละคร (Safe Water Zone 50%, 38%)...")
                 InputSimulator.move_to_safe_water_zone(self.config)
                 time.sleep(idle_delay)
@@ -353,6 +371,9 @@ class FishingBot:
                 # STATE 1: CASTING (Sub-ROI 15% + 450ms Min Gate)
                 # ====================================================
                 self.set_state(BotState.CASTING)
+                mode = self.config.get("screen", {}).get("detection_mode", "auto")
+                cast_roi = self.config.get("screen", {}).get("auto_cast_search_roi" if mode == "auto" else "cast_bar_roi")
+                self.set_overlay(cast_roi, "#50fa7b", "🎣 สแกนเกจ Power Bar (State 1)")
                 self.log("🎣 [State 1: Casting] ส่ง MouseDown ชาร์จเกจพลังงาน (Min Gate 450ms)...")
                 self.stats["casts_count"] += 1
                 self.update_stats()
@@ -363,6 +384,8 @@ class FishingBot:
                 # STATE 2: SINKING (Dual Anchor '!'/Hold | Dynamic Timeout)
                 # ====================================================
                 self.set_state(BotState.SINKING)
+                hold_roi = self.config.get("screen", {}).get("auto_hold_search_roi" if mode == "auto" else "hold_roi")
+                self.set_overlay(hold_roi, "#f1fa8c", "🌊 สแกน Hold to fish / ! (State 2)")
 
                 # Pre-validation: Check if Power Bar is still on screen (Cast Failed -> Loop back to State 1)
                 time.sleep(0.2)
@@ -460,6 +483,8 @@ class FishingBot:
                 # STATE 3: REELING PROCESS (Adaptive Vision & Micro-Jitter 120ms)
                 # ====================================================
                 self.set_state(BotState.REELING)
+                cancel_roi = self.config.get("screen", {}).get("cancel_btn_roi")
+                self.set_overlay(cancel_roi, "#ff79c6", "🎣 ดึงปลา / เช็กปุ่ม Cancel (State 3)")
                 reel_hold_duration = self.calculate_reel_duration()
                 self.log(f"🎣 [State 3: Reeling] เริ่มกดคลิกซ้ายค้างดึงปลา ({reel_hold_duration}s) + Micro-Jitter ทุก 120ms...")
 
@@ -507,6 +532,7 @@ class FishingBot:
                 # STATE 4: LOOT & FAST RESET (1.9s Recast + Click-to-Dismiss)
                 # ====================================================
                 self.set_state(BotState.LOOT_RESET)
+                self.set_overlay(None)
                 self.log(f"⏳ [State 4: Loot & Reset] รอการ์ดแสดงผล ({recast_delay}s)... ส่งคลิกซ้าย 1 ครั้งเพื่อข้ามการ์ดและเตรียมเหวี่ยงเบ็ด")
 
                 time.sleep(0.5)
