@@ -520,7 +520,20 @@ class FishingBotApp:
         self.reaction_slider.set(current_reaction)
         self.reaction_slider.pack(fill="x")
 
-        # 4. Max Sinking Timeout (5.0 - 90.0 s)
+        # 4. Reeling Hold Duration (0.5 - 25.0 s)
+        current_reel = float(self.config.get("timings", {}).get("reel_hold_duration_sec", 4.2) or 4.2)
+        self.reeling_val_lbl = tk.Label(s1, text=f"🎣 Reeling Hold Duration: {current_reel:.1f} s", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
+        self.reeling_val_lbl.pack(anchor="w")
+
+        self.reeling_slider = tk.Scale(
+            s1, from_=0.5, to=25.0, orient="horizontal", resolution=0.1, showvalue=False,
+            bg=ModernColors.CARD_BG, fg=ModernColors.TEXT_MAIN, troughcolor=ModernColors.BORDER, highlightthickness=0,
+            command=self.on_reeling_slider_change
+        )
+        self.reeling_slider.set(current_reel)
+        self.reeling_slider.pack(fill="x")
+
+        # 5. Max Sinking Timeout (5.0 - 90.0 s)
         current_sink = float(self.config.get("timings", {}).get("sinking_timeout_sec", 32.5) or 32.5)
         self.sinking_val_lbl = tk.Label(s1, text=f"🌊 Max Sinking Timeout: {current_sink:.1f} s", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.sinking_val_lbl.pack(anchor="w")
@@ -533,7 +546,7 @@ class FishingBotApp:
         self.sinking_slider.set(current_sink)
         self.sinking_slider.pack(fill="x")
 
-        # 5. Template Match (20% - 99%)
+        # 6. Template Match (20% - 99%)
         current_tpl_score = int(self.config.get("thresholds", {}).get("hold_template_match_threshold", 0.65) * 100)
         self.tpl_val_lbl = tk.Label(s1, text=f"🎯 Template Match: {current_tpl_score}%", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.tpl_val_lbl.pack(anchor="w")
@@ -560,6 +573,7 @@ class FishingBotApp:
         features = self.config.get("features", {})
         self.var_interrupt = tk.BooleanVar(value=features.get("global_interrupt_enabled", True))
         self.var_inv_full = tk.BooleanVar(value=features.get("inventory_full_detection", True))
+        self.var_cancel_ext = tk.BooleanVar(value=features.get("cancel_extension_enabled", True))
         self.var_double_check = tk.BooleanVar(value=features.get("double_check_enabled", True))
         self.var_lightning = tk.BooleanVar(value=features.get("lightning_flash_rejection", True))
         self.var_failsafe = tk.BooleanVar(value=features.get("failsafe_auto_recovery", True))
@@ -573,6 +587,12 @@ class FishingBotApp:
         tk.Checkbutton(
             s2, text="🎒 ตรวจจับกระเป๋าเต็ม (Inventory Full Auto-Pause)",
             variable=self.var_inv_full, font=("Segoe UI", 7, "bold"), fg=ModernColors.ACCENT_RED, bg=ModernColors.CARD_BG,
+            selectcolor="#11111b", command=self.on_toggle_feature
+        ).pack(anchor="w")
+
+        tk.Checkbutton(
+            s2, text="🔄 ขยายเวลาดึงอัตโนมัติจนกว่าปุ่ม Cancel จะหายไป",
+            variable=self.var_cancel_ext, font=("Segoe UI", 7, "bold"), fg=ModernColors.ACCENT_BLUE, bg=ModernColors.CARD_BG,
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(anchor="w")
 
@@ -699,6 +719,8 @@ class FishingBotApp:
             self.config["rod_stats"]["strength"] = s
             self.config["timings"]["reel_hold_duration_sec"] = calc_sec
             self.config["timings"]["sinking_timeout_sec"] = calc_sink
+            self.reeling_slider.set(calc_sec)
+            self.reeling_val_lbl.config(text=f"🎣 Reeling Hold Duration: {calc_sec:.1f} s")
             self.sinking_slider.set(calc_sink)
             self.sinking_val_lbl.config(text=f"🌊 Max Sinking Timeout: {calc_sink:.1f} s")
             self.save_config()
@@ -723,15 +745,24 @@ class FishingBotApp:
         self.config["timings"]["bite_reaction_delay_ms"] = val_i
         self.save_config()
 
+    def on_reeling_slider_change(self, val):
+        val_f = round(float(val), 1)
+        self.reeling_val_lbl.config(text=f"🎣 Reeling Hold Duration: {val_f:.1f} s")
+        self.config["timings"]["reel_hold_duration_sec"] = val_f
+        try:
+            sink_val = float(self.config.get("timings", {}).get("sinking_timeout_sec", 32.5))
+            self.calc_time_lbl.config(text=f"⚡ {val_f:.1f}s | 🌊 {sink_val:.1f}s")
+        except:
+            pass
+        self.save_config()
+
     def on_sinking_slider_change(self, val):
         val_f = round(float(val), 1)
         self.sinking_val_lbl.config(text=f"🌊 Max Sinking Timeout: {val_f:.1f} s")
         self.config["timings"]["sinking_timeout_sec"] = val_f
         try:
-            d = float(self.depth_entry.get() or 330)
-            s = float(self.str_entry.get() or 146)
-            calc_sec = round((d / max(1.0, s)) * 1.65 + 0.5, 1)
-            self.calc_time_lbl.config(text=f"⚡ {calc_sec}s | 🌊 {val_f:.1f}s")
+            reel_val = float(self.config.get("timings", {}).get("reel_hold_duration_sec", 4.2))
+            self.calc_time_lbl.config(text=f"⚡ {reel_val:.1f}s | 🌊 {val_f:.1f}s")
         except:
             pass
         self.save_config()
@@ -747,6 +778,7 @@ class FishingBotApp:
             self.config["features"] = {}
         self.config["features"]["global_interrupt_enabled"] = self.var_interrupt.get()
         self.config["features"]["inventory_full_detection"] = self.var_inv_full.get()
+        self.config["features"]["cancel_extension_enabled"] = self.var_cancel_ext.get()
         self.config["features"]["double_check_enabled"] = self.var_double_check.get()
         self.config["features"]["lightning_flash_rejection"] = self.var_lightning.get()
         self.config["features"]["failsafe_auto_recovery"] = self.var_failsafe.get()
@@ -758,6 +790,7 @@ class FishingBotApp:
             self.config["timings"]["min_charge_gate_ms"] = 450
             self.config["timings"]["recast_delay_sec"] = 1.9
             self.config["timings"]["bite_reaction_delay_ms"] = 350
+            self.config["timings"]["reel_hold_duration_sec"] = 4.2
             self.config["timings"]["sinking_timeout_sec"] = 32.5
             self.config["thresholds"]["hold_template_match_threshold"] = 0.65
             self.config["thresholds"]["modal_continue_score"] = 0.70
@@ -772,6 +805,7 @@ class FishingBotApp:
             self.config["features"] = {
                 "global_interrupt_enabled": True,
                 "inventory_full_detection": True,
+                "cancel_extension_enabled": True,
                 "anti_afk_enabled": True,
                 "dynamic_green_detection": True,
                 "lightning_flash_rejection": True,
@@ -782,10 +816,12 @@ class FishingBotApp:
             self.gate_slider.set(450)
             self.recast_slider.set(1.9)
             self.reaction_slider.set(350)
+            self.reeling_slider.set(4.2)
             self.sinking_slider.set(32.5)
             self.tpl_slider.set(65)
             self.var_interrupt.set(True)
             self.var_inv_full.set(True)
+            self.var_cancel_ext.set(True)
             self.var_double_check.set(True)
             self.var_lightning.set(True)
             self.var_failsafe.set(True)

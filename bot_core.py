@@ -189,12 +189,14 @@ class FishingBot:
         return False
 
     def calculate_reel_duration(self):
+        override = self.config.get("timings", {}).get("reel_hold_duration_sec", None)
+        if override is not None:
+            return max(0.5, float(override))
         rod = self.config.get("rod_stats", {"depth": 330, "strength": 146})
         depth = float(rod.get("depth", 330))
         strength = max(1.0, float(rod.get("strength", 146)))
         calc_duration = round((depth / strength) * 1.65 + 0.5, 1)
-        override = self.config.get("timings", {}).get("reel_hold_duration_sec", None)
-        return override if override is not None else max(3.0, calc_duration)
+        return max(0.5, calc_duration)
 
     def calculate_sinking_timeout(self):
         base_timeout = float(self.config.get("timings", {}).get("sinking_timeout_sec", 18.0) or 18.0)
@@ -454,10 +456,11 @@ class FishingBot:
                         last_jitter = now
                     time.sleep(scan_interval)
 
-                # State 3 Extension check: verify red Cancel button absence
-                if double_check and self.is_running:
+                # State 3 Extension check: verify red Cancel button absence (if enabled)
+                cancel_extension_enabled = features.get("cancel_extension_enabled", True)
+                if cancel_extension_enabled and self.is_running:
                     if self.detector.detect_red_cancel_button():
-                        self.log(f"⚠️ [State 3 Validation] ครบเวลา {reel_hold_duration}s แต่ปุ่ม Cancel ยังอยู่ -> ขยายเวลากดค้างต่ออัตโนมัติ (สูงสุด +{cancel_extension_max}s)...")
+                        self.log(f"⚠️ [State 3 Extension] ครบเวลา {reel_hold_duration:.1f}s แต่ปุ่ม Cancel ยังอยู่ -> ขยายเวลากดค้างดึงต่อจนกว่าปุ่ม Cancel จะหายไป (สูงสุด +{cancel_extension_max}s)...")
                         ext_start = time.perf_counter()
                         while self.is_running and (time.perf_counter() - ext_start) < cancel_extension_max:
                             now = time.time()
@@ -469,7 +472,7 @@ class FishingBot:
                                 last_jitter = now
 
                             if not self.detector.detect_red_cancel_button():
-                                self.log(f"✨ [State 3 Validation] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย!")
+                                self.log(f"✨ [State 3 Extension] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย!")
                                 break
                             time.sleep(scan_interval)
 
