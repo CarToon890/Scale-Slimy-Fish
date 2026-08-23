@@ -503,24 +503,29 @@ class FishingBot:
                         last_jitter = now
                     time.sleep(scan_interval)
 
-                # State 3 Extension check: verify red Cancel button absence (if enabled)
+                # State 3 Extension check: keep reeling continuously until red Cancel button disappears
                 cancel_extension_enabled = features.get("cancel_extension_enabled", True)
+                cancel_extension_max = float(timings.get("reeling_cancel_extension_max_sec", 35.0) or 35.0)
+
                 if cancel_extension_enabled and self.is_running:
                     if self.detector.detect_red_cancel_button():
-                        self.log(f"⚠️ [State 3 Extension] ครบเวลา {reel_hold_duration:.1f}s แต่ปุ่ม Cancel ยังอยู่ -> ขยายเวลากดค้างดึงต่อจนกว่าปุ่ม Cancel จะหายไป (สูงสุด +{cancel_extension_max}s)...")
+                        self.log(f"🔄 [Cancel Auto-Extension] ครบเวลา {reel_hold_duration:.1f}s แต่ปุ่ม Cancel ยังคงอยู่ -> กดค้างดึงต่อไปเรื่อยๆ จนกว่าปุ่ม Cancel จะหายไป...")
                         ext_start = time.perf_counter()
                         while self.is_running and (time.perf_counter() - ext_start) < cancel_extension_max:
                             now = time.time()
                             elapsed_ext = time.perf_counter() - ext_start
-                            self.set_progress(100.0, f"ขยายเวลาดึงปลาต่อ: +{elapsed_ext:.1f}s (รอปุ่ม Cancel หายไป)...")
+                            self.set_progress(100.0, f"กำลังกดดึงต่ออัตโนมัติ: +{elapsed_ext:.1f}s (รอปุ่ม Cancel หายไป)...")
 
                             if now - last_jitter >= jitter_interval:
                                 InputSimulator.send_micro_jitter()
                                 last_jitter = now
 
+                            # Check if Cancel button has disappeared
                             if not self.detector.detect_red_cancel_button():
-                                self.log(f"✨ [State 3 Extension] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย!")
-                                break
+                                time.sleep(0.02)
+                                if not self.detector.detect_red_cancel_button():
+                                    self.log(f"✨ [Cancel Auto-Extension] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย! ปล่อยเมาส์ทันที")
+                                    break
                             time.sleep(scan_interval)
 
                 InputSimulator.mouse_up()

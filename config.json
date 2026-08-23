@@ -67,7 +67,7 @@
     "reeling_cancel_extension_sec": 5.0,
     "jitter_interval_ms": 120,
     "debounce_frames": 3,
-    "recast_delay_sec": 5.5,
+    "recast_delay_sec": 3.0,
     "scan_interval_sec": 0.025,
     "anti_afk_interval_sec": 120.0
   },
