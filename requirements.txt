@@ -1,0 +1,7 @@
+mss>=9.0.2
+opencv-python>=4.10.0
+numpy>=1.26.0
+pyautogui>=0.9.54
+keyboard>=0.13.5
+pillow>=10.4.0
+pywin32>=306
