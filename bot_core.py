@@ -587,12 +587,6 @@ class FishingBot:
                             hooked = True
                             break
 
-                    # Check Cancel Button presence in State 2 (Immediate State 3 Transition)
-                    if self.detector.detect_red_cancel_button():
-                        self.log("🛑 [State 2 Cancel Intercept] ตรวจพบปุ่ม Cancel ปรากฏบนหน้าจอ -> เข้าสู่ STATE 3: REELING ทันที!")
-                        hooked = True
-                        break
-
                     time.sleep(scan_interval)
 
                 if not self.is_running:

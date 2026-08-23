@@ -13,8 +13,7 @@
   3. `STATE 2: SINKING` (รอสายเบ็ดจมน้ำ พร้อม Dual-Anchor สแกน `Hold to fish` / `!`)
   4. `TRANSITION: REACTION` (หน่วงเวลาตอบสนองเมื่อปลาติดเบ็ดก่อนส่ง MouseDown)
   5. `STATE 3: REELING` (กดคลิกซ้ายค้างดึงปลา + Micro-Jitter 120ms + ตรวจสอบปุ่ม Cancel)
-  6. `STATE 4: LOOT & RESET` (รอการ์ดแสดงผลปลา คลิกข้ามและเตรียมเหวี่ยงเบ็ดยกถัดไป)
-- **🛑 Universal Cancel Interception:** ไม่ว่าจะอยู่ใน STATE ไหนก็ตาม หากตรวจพบปุ่มวงกลมสีแดง **Cancel** บนหน้าจอ บอทจะตัดเข้าสู่ `STATE 3: REELING` เพื่อดึงปลาทันที
+- **🛑 Universal Cancel Interception:** หากตรวจพบปุ่มวงกลมสีแดง **Cancel** บนหน้าจอระหว่างอยู่ในสถานะ `STATE 0 (IDLE)`, `STATE 1 (CASTING)` หรือ `STATE 4 (LOOT & RESET)` บอทจะตัดเข้าสู่ `STATE 3: REELING` เพื่อดึงปลาทันที (สำหรับ `STATE 2: SINKING` สายเบ็ดจะจมน้ำตามธรรมชาติและรอสัญญาณ `Hold to fish` / `!` เพื่อดึงปลา)
 - **🔄 Cancel Auto-Extension Loop:** เมื่อเปิดสวิตช์ Extension บอทจะกดคลิกซ้ายค้างดึงต่อไปเรื่อยๆ จนกว่าปุ่ม Cancel จะหายไปจากหน้าจอ (ปลาลอยขึ้นผิวน้ำครบ $100\%$)
 - **⚡ Fast Cancel Reset:** เมื่อปิดสวิตช์ Extension หากครบเวลาแล้วปลายังไม่ขึ้น บอทจะกดปุ่ม Cancel เพื่อตัดสายและวนกลับไปเหวี่ยงเบ็ดใหม่ทันที
 - **🎒 Rod Capacity Multiplier:** รองรับสเปกคันเบ็ด `Cap:` (จำนวนปลาที่ตกได้ต่อรอบ) โดยระบบจะคำนวณและสะสมสถิติปลาจริง (เช่น เหวี่ยงติด 10 ครั้ง $\times 10\text{ Cap} = 100\text{ ตัว}$)
