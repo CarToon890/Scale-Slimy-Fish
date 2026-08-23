@@ -1,12 +1,13 @@
 """
 Vision Module for Scale Slimy Fish Auto Fishing Bot.
 Implements:
-1. is_click_to_continue_present(): Template Matching on "Click to Continue" (Score >= 0.70)
-2. is_inventory_full(): HSV Red Masking on "Inventory full" text (Red Ratio >= 0.04)
-3. High-Precision Cancel Button Detection (Bottom-Edge UI + Dual Red/White Contrast)
-4. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
-5. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
-6. Lightning Flash Rejection Filter
+1. High-Performance Template Matching for 'Hold to fish'
+2. is_click_to_continue_present(): Template Matching on "Click to Continue" (Score >= 0.70)
+3. is_inventory_full(): HSV Red Masking on "Inventory full" text (Red Ratio >= 0.04)
+4. High-Precision Cancel Button Detection (Bottom-Edge UI + Dual Red/White Contrast)
+5. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
+6. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
+7. Lightning Flash Rejection Filter
 """
 
 import sys
@@ -408,7 +409,7 @@ class VisionDetector:
             return self._detect_green_peak_auto(frame)
 
     # ----------------------------------------------------
-    # DUAL ANCHOR: TEMPLATE MATCH + RED '!' EXCLAMATION MARK
+    # DUAL ANCHOR: ORIGINAL FAST TEMPLATE MATCH + RED '!'
     # ----------------------------------------------------
     def _detect_exclamation_mark(self, frame):
         if frame is None or frame.size == 0:
@@ -443,17 +444,9 @@ class VisionDetector:
         sh, sw = search_gray.shape[:2]
 
         if sh < th or sw < tw:
-            # Auto-adapt: If search frame is smaller than template, scale template down
-            scale = min(sh / max(1, th), sw / max(1, tw))
-            if scale > 0.3:
-                tpl_adapted = cv2.resize(self.hold_template_gray, (max(5, int(tw * scale)), max(5, int(th * scale))), interpolation=cv2.INTER_AREA)
-                res = cv2.matchTemplate(search_gray, tpl_adapted, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, max_loc = cv2.minMaxLoc(res)
-                match_score = round(float(max_val), 4)
-                is_detected = (match_score >= threshold) or has_excl
-                return is_detected, match_score, {"is_detected": is_detected, "match_score": match_score, "has_exclamation": has_excl}
             return has_excl, 0.0, {"error": "Search frame smaller than template"}
 
+        # Fast direct TM_CCOEFF_NORMED matching
         res = cv2.matchTemplate(search_gray, self.hold_template_gray, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
@@ -483,5 +476,4 @@ class VisionDetector:
 
 if __name__ == "__main__":
     detector = VisionDetector()
-    print("Testing is_click_to_continue_present():", detector.is_click_to_continue_present())
-    print("Testing is_inventory_full():", detector.is_inventory_full())
+    print("Testing Hold anchor:", detector.detect_hold_anchor())

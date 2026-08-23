@@ -3,7 +3,7 @@ Compact Side-Panel GUI Application for Scale Slimy Fish Auto Fishing Bot.
 Optimized for Side-by-Side Gaming (440x680px) with:
 - Always on Top (ปักหมุดลอยบนจอคู่กับ Roblox)
 - Real-Time Live Rod Status LED (🔴 เบ็ดในน้ำ / 🟢 ถือเบ็ดบนบก)
-- Robust Template Capture System (Undimmed Raw Screen Crop + Auto-Expanded Search ROI)
+- High-Performance Hold to Fish & Continue Detection (Decoupled Template & Search ROI)
 - Click to Continue Modal Handler (Legendary Fish Unlock)
 - Inventory Full Warning Detector (Auto-Pause with Red Banner)
 - Dual Live Camera Monitors (Power Bar & Hold Text)
@@ -73,7 +73,6 @@ class FullscreenFrozenSelector(tk.Toplevel):
         with mss.mss() as sct:
             shot = sct.grab(sct.monitors[1])
             self.raw_shot = shot
-            # Keep raw undimmed RGB PIL image for crystal-clear template saving
             self.raw_pil = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
             self.screen_img = self.raw_pil.resize((self.sw, self.sh), Image.Resampling.BILINEAR)
 
@@ -134,7 +133,6 @@ class FullscreenFrozenSelector(tk.Toplevel):
                 "w_ratio": round(w / self.sw, 4),
                 "h_ratio": round(h / self.sh, 4)
             }
-            # Crop from the raw undimmed screenshot for 100% template fidelity
             rx1 = max(0, int((x1 / self.sw) * self.raw_pil.width))
             ry1 = max(0, int((y1 / self.sh) * self.raw_pil.height))
             rx2 = min(self.raw_pil.width, int((x2 / self.sw) * self.raw_pil.width))
@@ -453,7 +451,13 @@ class FishingBotApp:
         ).pack(side="left", fill="x", expand=True, padx=(0, 1))
 
         tk.Button(
-            c2_b, text="📸 แคป Continue", font=("Segoe UI", 7, "bold"),
+            c2_b, text="🎯 กรอบ Hold", font=("Segoe UI", 7),
+            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_YELLOW, relief="flat",
+            command=lambda: self.open_roi_selector("Hold to fish (กรอบค้นหา)", "hold_roi")
+        ).pack(side="left", fill="x", expand=True, padx=1)
+
+        tk.Button(
+            c2_b, text="📸 Continue", font=("Segoe UI", 7, "bold"),
             bg="#8957e5", fg="white", relief="flat",
             command=self.open_continue_capture_selector
         ).pack(side="right", fill="x", expand=True, padx=(1, 0))
@@ -720,6 +724,13 @@ class FishingBotApp:
             self.config["thresholds"]["hold_template_match_threshold"] = 0.65
             self.config["thresholds"]["modal_continue_score"] = 0.70
             self.config["thresholds"]["inventory_red_ratio"] = 0.04
+            self.config["screen"]["hold_roi"] = {
+                "x_ratio": 0.35,
+                "y_ratio": 0.40,
+                "w_ratio": 0.30,
+                "h_ratio": 0.15
+            }
+            self.config["screen"]["detection_mode"] = "auto"
             self.config["features"] = {
                 "global_interrupt_enabled": True,
                 "inventory_full_detection": True,
@@ -745,54 +756,21 @@ class FishingBotApp:
         self.append_log("📸 แคปแม่แบบข้อความ 'Hold to fish'...")
         def _on_selected(roi_ratio, crop_bgr):
             if crop_bgr is not None and crop_bgr.size > 0:
-                # 1. Save crisp template
                 self.bot.detector.save_hold_template(crop_bgr)
-                
-                # 2. Auto-expand search ROI with generous padding around template
-                pad_w = max(0.05, roi_ratio["w_ratio"] * 0.35)
-                pad_h = max(0.04, roi_ratio["h_ratio"] * 0.60)
-                search_roi = {
-                    "x_ratio": max(0.0, round(roi_ratio["x_ratio"] - pad_w, 4)),
-                    "y_ratio": max(0.0, round(roi_ratio["y_ratio"] - pad_h, 4)),
-                    "w_ratio": min(1.0, round(roi_ratio["w_ratio"] + (pad_w * 2), 4)),
-                    "h_ratio": min(1.0, round(roi_ratio["h_ratio"] + (pad_h * 2), 4))
-                }
-                
-                if "screen" not in self.config:
-                    self.config["screen"] = {}
-                self.config["screen"]["hold_roi"] = search_roi
-                self.config["screen"]["detection_mode"] = "manual"
-                self.save_config()
-                self.append_log(f"✨ บันทึกแม่แบบ template_hold.png และอัปเดตพื้นที่ค้นหาเรียบร้อย: {search_roi}")
-                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Hold to fish' และอัปเดตพื้นที่ตรวจจับเรียบร้อยแล้ว!")
+                self.append_log("✨ บันทึกแม่แบบ template_hold.png สำเร็จ!")
+                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Hold to fish' เรียบร้อยแล้ว!")
 
-        FullscreenFrozenSelector(self.root, "ข้อความ 'Hold to fish'", mode="box", on_selected=_on_selected)
+        FullscreenFrozenSelector(self.root, "ข้อความ 'Hold to fish' (ลากเฉพาะตัวหนังสือ)", mode="box", on_selected=_on_selected)
 
     def open_continue_capture_selector(self):
         self.append_log("📸 แคปแม่แบบข้อความ 'Click to Continue'...")
         def _on_selected(roi_ratio, crop_bgr):
             if crop_bgr is not None and crop_bgr.size > 0:
-                # 1. Save crisp template
                 self.bot.detector.save_continue_template(crop_bgr)
-                
-                # 2. Auto-expand search ROI with generous padding around template
-                pad_w = max(0.05, roi_ratio["w_ratio"] * 0.30)
-                pad_h = max(0.04, roi_ratio["h_ratio"] * 0.50)
-                modal_roi = {
-                    "x_ratio": max(0.0, round(roi_ratio["x_ratio"] - pad_w, 4)),
-                    "y_ratio": max(0.0, round(roi_ratio["y_ratio"] - pad_h, 4)),
-                    "w_ratio": min(1.0, round(roi_ratio["w_ratio"] + (pad_w * 2), 4)),
-                    "h_ratio": min(1.0, round(roi_ratio["h_ratio"] + (pad_h * 2), 4))
-                }
-                
-                if "screen" not in self.config:
-                    self.config["screen"] = {}
-                self.config["screen"]["modal_continue_roi"] = modal_roi
-                self.save_config()
-                self.append_log(f"✨ บันทึกแม่แบบ template_continue.png และอัปเดตพื้นที่เรียบร้อย: {modal_roi}")
-                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Click to Continue' และอัปเดตพื้นที่เรียบร้อยแล้ว!")
+                self.append_log("✨ บันทึกแม่แบบ template_continue.png สำเร็จ!")
+                messagebox.showinfo("สำเร็จ", "บันทึกแม่แบบ 'Click to Continue' เรียบร้อยแล้ว!")
 
-        FullscreenFrozenSelector(self.root, "ข้อความ 'Click to Continue'", mode="box", on_selected=_on_selected)
+        FullscreenFrozenSelector(self.root, "ข้อความ 'Click to Continue' (ลากเฉพาะตัวหนังสือ)", mode="box", on_selected=_on_selected)
 
     def open_roi_selector(self, label, config_key):
         self.append_log(f"🎯 เลือกพื้นที่: {label}...")
