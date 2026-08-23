@@ -1,10 +1,11 @@
 """
 Vision Module for Scale Slimy Fish Auto Fishing Bot.
 Implements:
-1. High-Accuracy Template Matching Text Detector (cv2.TM_CCOEFF_NORMED)
-2. Lightning Flash Spike Rejection Filter (Mean Brightness > 235)
-3. Narrow Vertical Bar ROI (Isolates from Right-side Loot UI Overlays)
+1. Global Interrupt Modal Handler: detect_click_to_continue()
+2. Dual Anchor Detection: Hold to fish Template + Red '!' Exclamation Mark
+3. High-Accuracy Power Bar Green Peak Detector (15% Top Sub-ROI + Morphological OPEN)
 4. Red Cancel Button Detector (Pre-Cast State Validation)
+5. Lightning Flash Rejection Filter
 """
 
 import sys
@@ -40,7 +41,7 @@ class VisionDetector:
 
         # Cache primary monitor dimensions
         with mss.mss() as sct:
-            self.monitor = dict(sct.monitors[1])  # Primary monitor
+            self.monitor = dict(sct.monitors[1])
 
         # Reusable Morphological Kernel (3x3)
         self.kernel_3x3 = np.ones((3, 3), np.uint8)
@@ -120,13 +121,41 @@ class VisionDetector:
         return np.mean(gray) >= flash_threshold
 
     # ----------------------------------------------------
-    # MANUAL ROI CAPTURES
+    # GLOBAL INTERRUPT: MODAL / NEW FISH POPUP DETECTOR
+    # ----------------------------------------------------
+    def detect_click_to_continue(self):
+        """Detects Legendary / Rare Fish 'Click to Continue' or 'Found New Fish' popup modal."""
+        modal_roi = self.config.get("screen", {}).get("modal_continue_roi", {
+            "x_ratio": 0.30,
+            "y_ratio": 0.10,
+            "w_ratio": 0.40,
+            "h_ratio": 0.20
+        })
+        box = self.ratio_to_pixel_box(modal_roi)
+        frame = self.capture_screen(box)
+
+        if frame is None or frame.size == 0:
+            return False
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # 1. Golden / Yellow text banner (Found New Fish / Click to Continue)
+        yellow_mask = cv2.inRange(hsv, np.array([18, 140, 150]), np.array([32, 255, 255]))
+        # 2. High brightness white text in upper banner
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        _, white_mask = cv2.threshold(gray, 235, 255, cv2.THRESH_BINARY)
+
+        modal_pixels = cv2.countNonZero(yellow_mask) + cv2.countNonZero(white_mask)
+        # Trigger if significant banner pixels appear in modal area
+        return modal_pixels >= 850
+
+    # ----------------------------------------------------
+    # MANUAL & AUTO ROI CAPTURES
     # ----------------------------------------------------
     def capture_cast_bar(self):
         cast_roi = self.config.get("screen", {}).get("cast_bar_roi", {
-            "x_ratio": 0.77,
+            "x_ratio": 0.76,
             "y_ratio": 0.22,
-            "w_ratio": 0.048,
+            "w_ratio": 0.06,
             "h_ratio": 0.35
         })
         box = self.ratio_to_pixel_box(cast_roi)
@@ -134,9 +163,9 @@ class VisionDetector:
 
     def get_cast_bar_peak_box(self):
         cast_roi = self.config.get("screen", {}).get("cast_bar_roi", {
-            "x_ratio": 0.77,
+            "x_ratio": 0.76,
             "y_ratio": 0.22,
-            "w_ratio": 0.048,
+            "w_ratio": 0.06,
             "h_ratio": 0.35
         })
         base_box = self.ratio_to_pixel_box(cast_roi)
@@ -164,9 +193,6 @@ class VisionDetector:
         box = self.ratio_to_pixel_box(hold_roi)
         return self.capture_screen(box)
 
-    # ----------------------------------------------------
-    # AUTO SCREEN SCAN CAPTURES (Broad Search Areas)
-    # ----------------------------------------------------
     def capture_auto_cast_area(self):
         auto_roi = self.config.get("screen", {}).get("auto_cast_search_roi", {
             "x_ratio": 0.65,
@@ -278,7 +304,7 @@ class VisionDetector:
             area = cv2.contourArea(cnt)
             if area > largest_area:
                 largest_area = area
-            if area >= 120 and w <= 70:
+            if area >= 120 and w <= 75:
                 is_reached = True
                 break
 
@@ -298,16 +324,25 @@ class VisionDetector:
             return self._detect_green_peak_auto(frame)
 
     # ----------------------------------------------------
-    # TEMPLATE MATCHING FOR HOLD TO FISH
+    # DUAL ANCHOR: TEMPLATE MATCH + RED '!' EXCLAMATION MARK
     # ----------------------------------------------------
+    def _detect_exclamation_mark(self, frame):
+        """Secondary Anchor: Detects the red '!' alert icon above character/bobber."""
+        if frame is None or frame.size == 0:
+            return False, 0
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask1 = cv2.inRange(hsv, np.array([0, 140, 150]), np.array([10, 255, 255]))
+        mask2 = cv2.inRange(hsv, np.array([170, 140, 150]), np.array([180, 255, 255]))
+        red_mark = cv2.bitwise_or(mask1, mask2)
+        red_mark = cv2.morphologyEx(red_mark, cv2.MORPH_OPEN, self.kernel_3x3)
+        cnt = cv2.countNonZero(red_mark)
+        return cnt >= 60, cnt
+
     def _match_template_engine(self, search_frame):
         threshold = self.config.get("thresholds", {}).get("hold_template_match_threshold", 0.65)
 
         if self.hold_template_gray is None:
             self.load_hold_template()
-
-        if self.hold_template_gray is None:
-            return self._fallback_contrast_detect(search_frame)
 
         if search_frame is None or search_frame.size == 0:
             return False, 0.0, {"error": "Empty search frame"}
@@ -315,70 +350,48 @@ class VisionDetector:
         if self.config.get("features", {}).get("lightning_flash_rejection", True) and self.is_lightning_flash(search_frame):
             return False, 0.0, {"is_detected": False, "match_score": 0.0, "rejected_flash": True}
 
+        # Check secondary exclamation mark anchor
+        has_excl, excl_px = self._detect_exclamation_mark(search_frame)
+
+        if self.hold_template_gray is None:
+            return has_excl, 0.0, {"mode": "exclamation_anchor", "is_detected": has_excl}
+
         search_gray = cv2.cvtColor(search_frame, cv2.COLOR_BGR2GRAY)
         th, tw = self.hold_template_gray.shape[:2]
         sh, sw = search_gray.shape[:2]
 
         if sh < th or sw < tw:
-            return False, 0.0, {"error": "Search frame smaller than template"}
+            return has_excl, 0.0, {"error": "Search frame smaller than template"}
 
         res = cv2.matchTemplate(search_gray, self.hold_template_gray, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
         match_score = round(float(max_val), 4)
-        is_detected = match_score >= threshold
+        is_detected = (match_score >= threshold) or has_excl
 
         details = {
             "is_detected": is_detected,
             "match_score": match_score,
+            "has_exclamation": has_excl,
             "threshold": threshold,
             "location": max_loc
         }
         return is_detected, match_score, details
 
-    def _fallback_contrast_detect(self, frame):
-        if frame is None or frame.size == 0:
-            return False, 0.0, {"error": "Empty frame"}
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        total_pixels = frame.shape[0] * frame.shape[1]
-        _, bright_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-        density = cv2.countNonZero(bright_mask) / total_pixels
-        is_detected = density >= 0.015
-        return is_detected, round(density, 4), {"mode": "fallback_contrast", "density": density}
-
-    def _detect_hold_text_manual(self, frame=None):
+    def detect_hold_anchor(self, frame=None, force_mode=None):
+        """Unified dual-anchor detector for State 2 and State 3."""
+        mode = force_mode or self.config.get("screen", {}).get("detection_mode", "auto")
         if frame is None:
-            frame = self.capture_hold_text()
+            frame = self.capture_auto_hold_area() if mode == "auto" else self.capture_hold_text()
         is_detected, score, details = self._match_template_engine(frame)
-        details["mode"] = "manual"
-        return is_detected, details
-
-    def _detect_hold_text_auto(self, frame=None):
-        if frame is None:
-            frame = self.capture_auto_hold_area()
-        is_detected, score, details = self._match_template_engine(frame)
-        details["mode"] = "auto"
+        details["mode"] = mode
         return is_detected, details
 
     def detect_hold_text(self, frame=None, force_mode=None):
-        mode = force_mode or self.config.get("screen", {}).get("detection_mode", "auto")
-        if mode == "manual":
-            return self._detect_hold_text_manual(frame)
-        else:
-            return self._detect_hold_text_auto(frame)
-
-    def save_single_debug_crop(self, name, frame=None):
-        os.makedirs("debug", exist_ok=True)
-        path = os.path.join("debug", name)
-        if frame is not None and frame.size > 0:
-            cv2.imwrite(path, frame)
-        return path
+        return self.detect_hold_anchor(frame, force_mode)
 
 
 if __name__ == "__main__":
     detector = VisionDetector()
-    print("Screen dimensions:", detector.get_screen_dimensions())
-    print("Testing Template Matching...")
-    ht = detector.capture_hold_text()
-    ht_ok, ht_d = detector.detect_hold_text(ht)
-    print(f"Hold to fish Template Match: {ht_ok}, details: {ht_d}")
+    print("Testing detect_click_to_continue()...", detector.detect_click_to_continue())
+    print("Testing detect_hold_anchor()...", detector.detect_hold_anchor())

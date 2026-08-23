@@ -1,11 +1,11 @@
 """
 Main GUI Application for Scale Slimy Fish Auto Fishing Bot.
 Features:
-- Tabbed Pro Dashboard (ttk.Notebook): Live Monitor Tab, Advanced Settings Tab, Live Logs Tab
-- Extra-Large High-Definition Camera Monitors (380x180px) with Sharp Scaling
-- Full Advanced Parameters: Timing Delays, Vision Thresholds, Feature Toggles
-- Dynamic Rod Calculator (Depth & Strength -> Auto Reel Duration & Dynamic Sinking Timeout)
-- Triple Double-Check Engine, Failsafe Auto-Recovery, Lightning Filter
+- Master Technical Specification Architecture (6-State FSM + Global Interrupt Layer)
+- Auto Modal Handler: Detects & clears "Click to Continue" / "Found New Fish!" modals
+- Dual Anchor Detection: Hold to fish Template + Red '!' Icon
+- Extra-Large High-Definition Camera Monitors (390x190px)
+- Dynamic Rod Calculator (Depth: 330m+ & Strength: 146+ -> Auto Reel Duration & Dynamic Timeout)
 """
 
 import sys
@@ -52,7 +52,6 @@ class ModernColors:
 
 
 class FullscreenFrozenSelector(tk.Toplevel):
-    """Visual overlay displaying a frozen screenshot for high-precision selection."""
     def __init__(self, parent, target_name, mode="box", on_selected=None):
         super().__init__(parent)
         self.target_name = target_name
@@ -150,7 +149,7 @@ class FullscreenFrozenSelector(tk.Toplevel):
 class FishingBotApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Scale Slimy Fish — Professional Bot Dashboard")
+        self.root.title("Scale Slimy Fish — Master 6-State Bot")
         self.root.geometry("860x1020")
         self.root.minsize(820, 880)
         self.root.configure(bg=ModernColors.BG_DARK)
@@ -196,9 +195,7 @@ class FishingBotApp:
             messagebox.showerror("Error", f"ไม่สามารถบันทึก config ได้: {e}")
 
     def build_ui(self):
-        # ----------------------------------------------------
-        # 1. TOP HEADER & QUICK STATS
-        # ----------------------------------------------------
+        # 1. Header
         header = tk.Frame(self.root, bg=ModernColors.CARD_BG, padx=16, pady=8)
         header.pack(fill="x", padx=14, pady=(8, 2))
 
@@ -207,14 +204,13 @@ class FishingBotApp:
 
         title_lbl = tk.Label(
             title_frame,
-            text="🎣 SCALE SLIMY FISH — PRO DASHBOARD",
-            font=("Segoe UI", 15, "bold"),
+            text="🎣 SCALE SLIMY FISH — MASTER BOT (6-STATE & INTERRUPT)",
+            font=("Segoe UI", 14, "bold"),
             fg=ModernColors.ACCENT_BLUE,
             bg=ModernColors.CARD_BG
         )
         title_lbl.pack(side="left")
 
-        # Start / Stop Buttons in Header
         self.btn_start = tk.Button(
             title_frame,
             text="▶ เริ่มทำงาน (F6)",
@@ -235,9 +231,7 @@ class FishingBotApp:
         )
         self.btn_stop.pack(side="right", padx=4)
 
-        # ----------------------------------------------------
-        # 2. LIVE ACTIVITY & STATE PROGRESS BANNER
-        # ----------------------------------------------------
+        # 2. Activity & Progress Banner
         banner_frame = tk.Frame(self.root, bg=ModernColors.CARD_BG, padx=14, pady=6, relief="solid", bd=1)
         banner_frame.pack(fill="x", padx=14, pady=2)
 
@@ -257,7 +251,7 @@ class FishingBotApp:
         self.lbl_uptime = tk.Label(banner_top, text="⏱️ เวลาทำงาน: 00:00:00", font=("Segoe UI", 9), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG)
         self.lbl_uptime.pack(side="right")
 
-        self.activity_var = tk.StringVar(value="พร้อมทำงาน (กด F6 เพื่อเริ่มต้น หรือกดปรับแต่งในแท็บการตั้งค่า)")
+        self.activity_var = tk.StringVar(value="พร้อมทำงาน (กด F6 เพื่อเริ่มต้น หรือปรับสเปกในแท็บการตั้งค่า)")
         self.activity_lbl = tk.Label(
             banner_frame,
             textvariable=self.activity_var,
@@ -288,45 +282,38 @@ class FishingBotApp:
         stats_frame.pack(fill="x", pady=(4, 0))
 
         self.lbl_casts = tk.Label(stats_frame, text="🎣 เหวี่ยงเบ็ด: 0 ครั้ง", font=("Segoe UI", 9, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
-        self.lbl_casts.pack(side="left", padx=(0, 14))
+        self.lbl_casts.pack(side="left", padx=(0, 10))
 
         self.lbl_fish = tk.Label(stats_frame, text="🐟 ปลาที่ได้: 0 ตัว", font=("Segoe UI", 9, "bold"), fg=ModernColors.ACCENT_GREEN, bg=ModernColors.CARD_BG)
-        self.lbl_fish.pack(side="left", padx=14)
+        self.lbl_fish.pack(side="left", padx=10)
 
-        self.lbl_perfect = tk.Label(stats_frame, text="✨ Perfect Cast: 0 ครั้ง", font=("Segoe UI", 9, "bold"), fg=ModernColors.ACCENT_YELLOW, bg=ModernColors.CARD_BG)
-        self.lbl_perfect.pack(side="left", padx=14)
+        self.lbl_perfect = tk.Label(stats_frame, text="✨ Perfect: 0 ครั้ง", font=("Segoe UI", 9, "bold"), fg=ModernColors.ACCENT_YELLOW, bg=ModernColors.CARD_BG)
+        self.lbl_perfect.pack(side="left", padx=10)
 
-        # ----------------------------------------------------
-        # 3. TABBED INTERFACE (ttk.Notebook)
-        # ----------------------------------------------------
+        self.lbl_modals = tk.Label(stats_frame, text="🚨 ปิดป๊อปอัปปลาหายาก: 0 ครั้ง", font=("Segoe UI", 9, "bold"), fg=ModernColors.ACCENT_PURPLE, bg=ModernColors.CARD_BG)
+        self.lbl_modals.pack(side="left", padx=10)
+
+        # 3. Notebook
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=14, pady=4)
 
-        # TAB 1: Live Monitor & Cameras
         self.tab_monitor = tk.Frame(self.notebook, bg=ModernColors.BG_DARK)
         self.notebook.add(self.tab_monitor, text="  📺 จอภาพสดขนาดใหญ่ (Live Monitors)  ")
 
-        # TAB 2: Advanced Detailed Settings
         self.tab_settings = tk.Frame(self.notebook, bg=ModernColors.BG_DARK)
         self.notebook.add(self.tab_settings, text="  ⚙️ การตั้งค่าแบบละเอียด (Advanced Settings)  ")
 
-        # TAB 3: Telemetry Live Logs
         self.tab_logs = tk.Frame(self.notebook, bg=ModernColors.BG_DARK)
         self.notebook.add(self.tab_logs, text="  📋 บันทึกการทำงานสด (Live Logs)  ")
 
-        # Build each Tab
         self.build_tab_monitor()
         self.build_tab_settings()
         self.build_tab_logs()
 
-    # ----------------------------------------------------
-    # TAB 1: LIVE MONITORS (EXTRA-LARGE CAMERAS)
-    # ----------------------------------------------------
     def build_tab_monitor(self):
-        # 1. Dynamic Rod Calculator Bar
         rod_card = tk.LabelFrame(
             self.tab_monitor,
-            text=" 🎣 คำนวณความลึกและสเปกคันเบ็ด (Dynamic Rod Physics Calculator) ",
+            text=" 🎣 คำนวณสเปกคันเบ็ดระดับสูง (Depth: 330m+ / Strength: 146+) ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_PURPLE,
             bg=ModernColors.CARD_BG,
@@ -340,20 +327,20 @@ class FishingBotApp:
 
         tk.Label(rod_row1, text="Depth (m):", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left", padx=(0, 2))
         self.depth_entry = tk.Entry(rod_row1, width=6, bg="#11111b", fg=ModernColors.ACCENT_YELLOW, insertbackground="white", font=("Segoe UI", 9, "bold"))
-        current_depth = self.config.get("rod_stats", {}).get("depth", 280)
+        current_depth = self.config.get("rod_stats", {}).get("depth", 330)
         self.depth_entry.insert(0, str(current_depth))
         self.depth_entry.pack(side="left", padx=(0, 8))
         self.depth_entry.bind("<KeyRelease>", self.on_rod_stat_change)
 
         tk.Label(rod_row1, text="Strength:", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG).pack(side="left", padx=(0, 2))
         self.str_entry = tk.Entry(rod_row1, width=6, bg="#11111b", fg=ModernColors.ACCENT_GREEN, insertbackground="white", font=("Segoe UI", 9, "bold"))
-        current_str = self.config.get("rod_stats", {}).get("strength", 90)
+        current_str = self.config.get("rod_stats", {}).get("strength", 146)
         self.str_entry.insert(0, str(current_str))
         self.str_entry.pack(side="left", padx=(0, 8))
         self.str_entry.bind("<KeyRelease>", self.on_rod_stat_change)
 
         calc_sec = round((float(current_depth) / max(1.0, float(current_str))) * 1.65 + 0.5, 1)
-        calc_sink = round(max(14.0, (float(current_depth) / 12.0) + 5.0), 1)
+        calc_sink = round(max(18.0, (float(current_depth) / 12.0) + 5.0), 1)
 
         self.calc_time_lbl = tk.Label(
             rod_row1,
@@ -365,19 +352,19 @@ class FishingBotApp:
         self.calc_time_lbl.pack(side="left", padx=4)
 
         tk.Button(
-            rod_row1, text="🎯 คลิกเลือก Safe Zone", font=("Segoe UI", 8, "bold"),
+            rod_row1, text="🎯 Safe Zone (50%, 38%)", font=("Segoe UI", 8, "bold"),
             bg=ModernColors.BORDER, fg=ModernColors.ACCENT_PURPLE, relief="flat",
             command=self.open_point_selector
         ).pack(side="right", padx=2)
 
-        # 2. Extra-Large Live Camera Monitors (380x180px each)
+        # 2 Camera Monitors (390x190px)
         cam_container = tk.Frame(self.tab_monitor, bg=ModernColors.BG_DARK)
         cam_container.pack(fill="both", expand=True, padx=6, pady=2)
 
         # Monitor 1: Power Bar
         c1 = tk.LabelFrame(
             cam_container,
-            text=" 1. แถบเกจพลังงาน (Power Bar Monitor - State 1) ",
+            text=" 1. แถบเกจพลังงาน (Power Bar Sub-ROI 15% - State 1) ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_GREEN,
             bg=ModernColors.CARD_BG,
@@ -398,10 +385,10 @@ class FishingBotApp:
             command=lambda: self.open_roi_selector("Power Bar (แถบเกจพลังทางขวา)", "cast_bar_roi")
         ).pack(fill="x", pady=2)
 
-        # Monitor 2: Hold to Fish Template
+        # Monitor 2: Hold to Fish Template & Exclamation
         c2 = tk.LabelFrame(
             cam_container,
-            text=" 2. ข้อความดึงเบ็ด (Hold to Fish Template Monitor - State 2/3) ",
+            text=" 2. ข้อความ Hold to fish & ไอคอน '!' (State 2/3) ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_YELLOW,
             bg=ModernColors.CARD_BG,
@@ -431,17 +418,13 @@ class FishingBotApp:
             command=lambda: self.open_roi_selector("Hold to fish (ข้อความกึ่งกลางจอ)", "hold_roi")
         ).pack(side="right", fill="x", expand=True, padx=(2, 0))
 
-    # ----------------------------------------------------
-    # TAB 2: ADVANCED DETAILED SETTINGS
-    # ----------------------------------------------------
     def build_tab_settings(self):
         container = tk.Frame(self.tab_settings, bg=ModernColors.BG_DARK, padx=8, pady=4)
         container.pack(fill="both", expand=True)
 
-        # Section 1: Timings & Latency Fine-Tuning
         s1 = tk.LabelFrame(
             container,
-            text=" ⏱️ การปรับแต่งเวลาและจังหวะ (Timing Delays & Latencies) ",
+            text=" ⏱️ การปรับแต่งเวลาและจังหวะ (Timing Delays ตาม Master Spec) ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_BLUE,
             bg=ModernColors.CARD_BG,
@@ -450,12 +433,10 @@ class FishingBotApp:
         )
         s1.pack(fill="x", pady=3)
 
-        # Row: Min Charge Gate & Reaction Delay
         r1 = tk.Frame(s1, bg=ModernColors.CARD_BG)
         r1.pack(fill="x", pady=2)
 
-        # Min Charge Gate
-        current_gate = int(self.config.get("timings", {}).get("min_charge_gate_sec", 0.30) * 1000)
+        current_gate = int(self.config.get("timings", {}).get("min_charge_gate_ms", 450) or 450)
         self.gate_val_lbl = tk.Label(r1, text=f"⚡ หน่วงก่อนสแกนเกจชาร์จ (Min Charge Gate): {current_gate} ms", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.gate_val_lbl.pack(anchor="w")
 
@@ -467,12 +448,11 @@ class FishingBotApp:
         self.gate_slider.set(current_gate)
         self.gate_slider.pack(fill="x")
 
-        # Fast Recast Delay
         r2 = tk.Frame(s1, bg=ModernColors.CARD_BG)
         r2.pack(fill="x", pady=2)
 
-        current_recast = self.config.get("timings", {}).get("recast_delay_sec", 1.8)
-        self.recast_val_lbl = tk.Label(r2, text=f"⏳ เวลาหน่วงหลังตกเสร็จ (Fast Recast Delay): {current_recast:.1f} s", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
+        current_recast = self.config.get("timings", {}).get("recast_delay_sec", 1.9)
+        self.recast_val_lbl = tk.Label(r2, text=f"⏳ เวลาหน่วงหลังตกเสร็จ (Fast Recast Delay): {current_recast:.1f} s (แนะนำ 1.9s)", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.recast_val_lbl.pack(anchor="w")
 
         self.recast_slider = tk.Scale(
@@ -483,11 +463,10 @@ class FishingBotApp:
         self.recast_slider.set(current_recast)
         self.recast_slider.pack(fill="x")
 
-        # Bite Reaction Delay
         r3 = tk.Frame(s1, bg=ModernColors.CARD_BG)
         r3.pack(fill="x", pady=2)
 
-        current_reaction = int(self.config.get("timings", {}).get("bite_reaction_delay_sec", 0.35) * 1000)
+        current_reaction = int(self.config.get("timings", {}).get("bite_reaction_delay_ms", 350) or 350)
         self.reaction_val_lbl = tk.Label(r3, text=f"🐟 เวลาตอบสนองก่อนดึงเบ็ด (Bite Reaction Delay): {current_reaction} ms", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.reaction_val_lbl.pack(anchor="w")
 
@@ -499,10 +478,9 @@ class FishingBotApp:
         self.reaction_slider.set(current_reaction)
         self.reaction_slider.pack(fill="x")
 
-        # Section 2: Vision & Template Sensitivity
         s2 = tk.LabelFrame(
             container,
-            text=" 🎯 ความแม่นยำและการตรวจจับภาพ (Vision Sensitivity Thresholds) ",
+            text=" 🎯 ความแม่นยำและการตรวจจับภาพ (Vision Thresholds) ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_YELLOW,
             bg=ModernColors.CARD_BG,
@@ -511,12 +489,11 @@ class FishingBotApp:
         )
         s2.pack(fill="x", pady=3)
 
-        # Template Score
         r4 = tk.Frame(s2, bg=ModernColors.CARD_BG)
         r4.pack(fill="x", pady=2)
 
         current_tpl_score = int(self.config.get("thresholds", {}).get("hold_template_match_threshold", 0.65) * 100)
-        self.tpl_val_lbl = tk.Label(r4, text=f"🎯 ความแม่นยำ Template 'Hold to fish': {current_tpl_score}% (แนะนำ 60-70%)", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
+        self.tpl_val_lbl = tk.Label(r4, text=f"🎯 ความแม่นยำ Template 'Hold to fish': {current_tpl_score}% (แนะนำ 65%)", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
         self.tpl_val_lbl.pack(anchor="w")
 
         self.tpl_slider = tk.Scale(
@@ -527,10 +504,9 @@ class FishingBotApp:
         self.tpl_slider.set(current_tpl_score)
         self.tpl_slider.pack(fill="x")
 
-        # Section 3: Feature Toggles (Checkboxes)
         s3 = tk.LabelFrame(
             container,
-            text=" 🛡️ สวิตช์เปิด/ปิดฟังก์ชันความปลอดภัย (Feature & Safety Toggles) ",
+            text=" 🛡️ สวิตช์ฟังก์ชันความปลอดภัย & Global Interrupt ",
             font=("Segoe UI", 9, "bold"),
             fg=ModernColors.ACCENT_GREEN,
             bg=ModernColors.CARD_BG,
@@ -540,24 +516,24 @@ class FishingBotApp:
         s3.pack(fill="x", pady=3)
 
         features = self.config.get("features", {})
+        self.var_interrupt = tk.BooleanVar(value=features.get("global_interrupt_enabled", True))
         self.var_double_check = tk.BooleanVar(value=features.get("double_check_enabled", True))
         self.var_pre_cast = tk.BooleanVar(value=features.get("pre_cast_validation", True))
         self.var_lightning = tk.BooleanVar(value=features.get("lightning_flash_rejection", True))
         self.var_failsafe = tk.BooleanVar(value=features.get("failsafe_auto_recovery", True))
-        self.var_anti_afk = tk.BooleanVar(value=features.get("anti_afk_enabled", True))
 
         t_row1 = tk.Frame(s3, bg=ModernColors.CARD_BG)
         t_row1.pack(fill="x", pady=1)
 
         tk.Checkbutton(
-            t_row1, text="✅ ระบบ Triple Double-Check (เช็ก 2 เฟรมติดก่อนปล่อย/ดึง)",
-            variable=self.var_double_check, font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
+            t_row1, text="🚨 Global Interrupt (ดักจับป๊อปอัปปลาหายาก 'Click to Continue')",
+            variable=self.var_interrupt, font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_PURPLE, bg=ModernColors.CARD_BG,
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(side="left", padx=4)
 
         tk.Checkbutton(
-            t_row1, text="⚡ กรองแสงฟ้าผ่า (Lightning Rejection)",
-            variable=self.var_lightning, font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
+            t_row1, text="✅ Triple Double-Check",
+            variable=self.var_double_check, font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(side="left", padx=16)
 
@@ -565,27 +541,23 @@ class FishingBotApp:
         t_row2.pack(fill="x", pady=1)
 
         tk.Checkbutton(
-            t_row2, text="🚨 Failsafe Auto-Recovery (รีเซ็ต Slot 1 เมื่อ Timeout 2 ครั้ง)",
-            variable=self.var_failsafe, font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
+            t_row2, text="⚡ กรองแสงฟ้าผ่า (Lightning Rejection)",
+            variable=self.var_lightning, font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(side="left", padx=4)
 
         tk.Checkbutton(
-            t_row2, text="🛡️ Anti-AFK Kick Prevention",
-            variable=self.var_anti_afk, font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
+            t_row2, text="🚨 Failsafe Auto-Recovery (Slot 1)",
+            variable=self.var_failsafe, font=("Segoe UI", 8), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG,
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(side="left", padx=16)
 
-        # Reset Defaults Button
         tk.Button(
-            container, text="🔄 รีเซ็ตการตั้งค่าทั้งหมดกลับเป็นค่ามาตรฐานแนะนำ (Factory Defaults)",
+            container, text="🔄 รีเซ็ตการตั้งค่าทั้งหมดกลับเป็นค่ามาตรฐาน Master Spec",
             font=("Segoe UI", 9, "bold"), bg=ModernColors.BORDER, fg=ModernColors.ACCENT_YELLOW, relief="flat",
             command=self.reset_factory_defaults
         ).pack(fill="x", pady=6)
 
-    # ----------------------------------------------------
-    # TAB 3: TELEMETRY LIVE LOGS
-    # ----------------------------------------------------
     def build_tab_logs(self):
         log_frame = tk.Frame(self.tab_logs, bg=ModernColors.CARD_BG, padx=8, pady=6)
         log_frame.pack(fill="both", expand=True, padx=6, pady=4)
@@ -627,7 +599,7 @@ class FishingBotApp:
                         hold_frame = self.bot.detector.capture_hold_text()
 
                     is_green, pb_details = self.bot.detector.detect_green_peak(pb_frame, force_mode=mode)
-                    is_text, hold_details = self.bot.detector.detect_hold_text(hold_frame, force_mode=mode)
+                    is_text, hold_details = self.bot.detector.detect_hold_anchor(hold_frame, force_mode=mode)
 
                     thumb_pb = self._render_thumb(pb_frame, 390, 190)
                     thumb_hold = self._render_thumb(hold_frame, 390, 190)
@@ -667,10 +639,10 @@ class FishingBotApp:
 
     def on_rod_stat_change(self, event=None):
         try:
-            d = float(self.depth_entry.get() or 280)
-            s = float(self.str_entry.get() or 90)
+            d = float(self.depth_entry.get() or 330)
+            s = float(self.str_entry.get() or 146)
             calc_sec = round((d / max(1.0, s)) * 1.65 + 0.5, 1)
-            calc_sink = round(max(14.0, (d / 12.0) + 5.0), 1)
+            calc_sink = round(max(18.0, (d / 12.0) + 5.0), 1)
             self.calc_time_lbl.config(text=f"⚡ ดึงปลา (Reel): {calc_sec}s  |  🌊 จมน้ำสูงสุด (Sinking): {calc_sink}s")
             if "rod_stats" not in self.config:
                 self.config["rod_stats"] = {}
@@ -684,44 +656,46 @@ class FishingBotApp:
     def on_gate_slider_change(self, val):
         val_i = int(val)
         self.gate_val_lbl.config(text=f"⚡ หน่วงก่อนสแกนเกจชาร์จ (Min Charge Gate): {val_i} ms")
-        self.config["timings"]["min_charge_gate_sec"] = val_i / 1000.0
+        self.config["timings"]["min_charge_gate_ms"] = val_i
         self.save_config()
 
     def on_recast_slider_change(self, val):
         val_f = round(float(val), 1)
-        self.recast_val_lbl.config(text=f"⏳ เวลาหน่วงหลังตกเสร็จ (Fast Recast Delay): {val_f:.1f} s")
+        self.recast_val_lbl.config(text=f"⏳ เวลาหน่วงหลังตกเสร็จ (Fast Recast Delay): {val_f:.1f} s (แนะนำ 1.9s)")
         self.config["timings"]["recast_delay_sec"] = val_f
         self.save_config()
 
     def on_reaction_slider_change(self, val):
         val_i = int(val)
         self.reaction_val_lbl.config(text=f"🐟 เวลาตอบสนองก่อนดึงเบ็ด (Bite Reaction Delay): {val_i} ms")
-        self.config["timings"]["bite_reaction_delay_sec"] = val_i / 1000.0
+        self.config["timings"]["bite_reaction_delay_ms"] = val_i
         self.save_config()
 
     def on_tpl_slider_change(self, val):
         val_i = int(val)
-        self.tpl_val_lbl.config(text=f"🎯 ความแม่นยำ Template 'Hold to fish': {val_i}% (แนะนำ 60-70%)")
+        self.tpl_val_lbl.config(text=f"🎯 ความแม่นยำ Template 'Hold to fish': {val_i}% (แนะนำ 65%)")
         self.config["thresholds"]["hold_template_match_threshold"] = val_i / 100.0
         self.save_config()
 
     def on_toggle_feature(self):
         if "features" not in self.config:
             self.config["features"] = {}
+        self.config["features"]["global_interrupt_enabled"] = self.var_interrupt.get()
         self.config["features"]["double_check_enabled"] = self.var_double_check.get()
         self.config["features"]["pre_cast_validation"] = self.var_pre_cast.get()
         self.config["features"]["lightning_flash_rejection"] = self.var_lightning.get()
         self.config["features"]["failsafe_auto_recovery"] = self.var_failsafe.get()
-        self.config["features"]["anti_afk_enabled"] = self.var_anti_afk.get()
         self.save_config()
 
     def reset_factory_defaults(self):
-        if messagebox.askyesno("ยืนยัน", "ต้องการรีเซ็ตค่าการตั้งค่าทั้งหมดกลับเป็นค่ามาตรฐานแนะนำหรือไม่?"):
-            self.config["timings"]["min_charge_gate_sec"] = 0.30
-            self.config["timings"]["recast_delay_sec"] = 1.8
-            self.config["timings"]["bite_reaction_delay_sec"] = 0.35
+        if messagebox.askyesno("ยืนยัน", "ต้องการรีเซ็ตค่าการตั้งค่าทั้งหมดกลับเป็นค่ามาตรฐาน Master Spec หรือไม่?"):
+            self.config["timings"]["idle_delay_sec"] = 0.4
+            self.config["timings"]["min_charge_gate_ms"] = 450
+            self.config["timings"]["recast_delay_sec"] = 1.9
+            self.config["timings"]["bite_reaction_delay_ms"] = 350
             self.config["thresholds"]["hold_template_match_threshold"] = 0.65
             self.config["features"] = {
+                "global_interrupt_enabled": True,
                 "anti_afk_enabled": True,
                 "dynamic_green_detection": True,
                 "pre_cast_validation": True,
@@ -730,15 +704,15 @@ class FishingBotApp:
                 "failsafe_auto_recovery": True
             }
             self.save_config()
-            self.gate_slider.set(300)
-            self.recast_slider.set(1.8)
+            self.gate_slider.set(450)
+            self.recast_slider.set(1.9)
             self.reaction_slider.set(350)
             self.tpl_slider.set(65)
+            self.var_interrupt.set(True)
             self.var_double_check.set(True)
             self.var_lightning.set(True)
             self.var_failsafe.set(True)
-            self.var_anti_afk.set(True)
-            messagebox.showinfo("สำเร็จ", "รีเซ็ตค่ามาตรฐานเรียบร้อยแล้ว!")
+            messagebox.showinfo("สำเร็จ", "รีเซ็ตค่ามาตรฐาน Master Spec เรียบร้อยแล้ว!")
 
     def open_template_capture_selector(self):
         self.append_log("📸 เปิดหน้าจอแคปแม่แบบข้อความ 'Hold to fish'...")
@@ -790,7 +764,7 @@ class FishingBotApp:
     def start_bot(self):
         if not self.bot.is_running:
             self.bot.start()
-            self.state_var.set("สถานะ: กำลังทำงาน (Pro Engine Active)...")
+            self.state_var.set("สถานะ: กำลังทำงาน (6-State Master Engine)...")
             self.state_badge.config(fg=ModernColors.ACCENT_GREEN)
 
     def stop_bot(self):
@@ -816,7 +790,8 @@ class FishingBotApp:
         def _update():
             self.lbl_casts.config(text=f"🎣 เหวี่ยงเบ็ด: {stats['casts_count']} ครั้ง")
             self.lbl_fish.config(text=f"🐟 ปลาที่ได้: {stats['fish_caught']} ตัว")
-            self.lbl_perfect.config(text=f"✨ Perfect Cast: {stats['perfect_casts']} ครั้ง")
+            self.lbl_perfect.config(text=f"✨ Perfect: {stats['perfect_casts']} ครั้ง")
+            self.lbl_modals.config(text=f"🚨 ปิดป๊อปอัปปลาหายาก: {stats.get('modals_cleared', 0)} ครั้ง")
         self.root.after(0, _update)
 
     def start_uptime_timer(self):

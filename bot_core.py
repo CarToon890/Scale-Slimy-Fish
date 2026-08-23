@@ -1,12 +1,13 @@
 """
 Bot Core Engine for Scale Slimy Fish Auto Fishing Bot.
-Implements the 5-State Closed-Loop Engine with:
-- Dynamic Sinking Timeout (Calculated automatically from Depth: (Depth/12.0)+5.0s)
-- Adaptive Min Charge Gate (0.30s for fast-responding high-tier rods)
-- Failsafe Auto-Recovery on Consecutive Timeouts (Unequip/Re-equip Slot 1)
-- State 4 Click-to-Dismiss (Instant Loot Skip & Fast Cast)
-- Triple Double-Check Validation (State 1 Green Peak, State 2 Template Match, State 3 Reeling Extension)
-- Dynamic Rod Reeling Duration Formula
+Implements the 6-State FSM Architecture with Global Interrupt Handler:
+- Global Interrupt Layer: Auto-detects & dismisses Legendary "Click to Continue" modals
+- State 0: Streamlined IDLE (0.4s Fast Ready)
+- State 1: Precision Casting (Sub-ROI 15% + 450ms Min Gate + Morphological OPEN)
+- State 2: Dual-Anchor Sinking (Hold to fish + Red '!' Icon | Dynamic 18.0s Timeout)
+- Transition: 350ms Reaction Buffer
+- State 3: Adaptive Reeling (Zero-Drift Micro-Jitter 120ms + 3-Frame Debounce & Cancel Extension)
+- State 4: Fast Loot Reset (1.9s Recast + Click-to-Dismiss)
 """
 
 import sys
@@ -43,11 +44,11 @@ user32 = ctypes.windll.user32
 
 
 class BotState(Enum):
-    IDLE = "STATE 0: IDLE / READY (สแตนด์บาย Safe Zone)"
-    CASTING = "STATE 1: CASTING (ชาร์จเกจพลังงาน -> ดับเบิ้ลเช็คโซนเขียว)"
-    SINKING = "STATE 2: SINKING (เบ็ดจมน้ำตาม Depth & ดับเบิ้ลเช็คปลาติด)"
-    REELING = "STATE 3: REELING (กดค้างดึงปลา + ดับเบิ้ลเช็คปุ่ม Cancel)"
-    LOOT_RESET = "STATE 4: LOOT & RESET (คลิกข้ามการ์ดปลา & วนรอบเหวี่ยงเบ็ด)"
+    IDLE = "STATE 0: IDLE / READY (สแตนด์บาย Safe Zone 0.4s)"
+    CASTING = "STATE 1: CASTING (ชาร์จเกจ 450ms+ -> ดับเบิ้ลเช็คโซนเขียว)"
+    SINKING = "STATE 2: SINKING (เบ็ดจมน้ำ 18.0s+ & Dual-Anchor '!'/Hold)"
+    REELING = "STATE 3: REELING (กดค้างดึงปลา + Micro-Jitter 120ms & Debounce)"
+    LOOT_RESET = "STATE 4: LOOT & RESET (คลิกข้ามการ์ด & วนรอบ 1.9s)"
 
 
 class InputSimulator:
@@ -119,6 +120,7 @@ class FishingBot:
             "casts_count": 0,
             "fish_caught": 0,
             "perfect_casts": 0,
+            "modals_cleared": 0,
             "start_time": None,
             "uptime_seconds": 0
         }
@@ -152,21 +154,35 @@ class FishingBot:
         if self.stats_callback:
             self.stats_callback(self.stats)
 
+    def check_global_interrupt(self):
+        """Global Interrupt Layer: Detects and clears Legendary 'Click to Continue' modals."""
+        if not self.config.get("features", {}).get("global_interrupt_enabled", True):
+            return False
+
+        if self.detector.detect_click_to_continue():
+            self.log("🚨 [Global Interrupt] ตรวจพบหน้าต่างปลาหายาก (Click to Continue) -> ส่งคลิกเคลียร์หน้าต่างทันที")
+            InputSimulator.move_to_safe_water_zone(self.config)
+            InputSimulator.click(0.04)
+            time.sleep(0.5)
+            self.stats["modals_cleared"] += 1
+            self.update_stats()
+            return True
+        return False
+
     def calculate_reel_duration(self):
-        rod = self.config.get("rod_stats", {"depth": 280, "strength": 90})
-        depth = float(rod.get("depth", 280))
-        strength = max(1.0, float(rod.get("strength", 90)))
+        rod = self.config.get("rod_stats", {"depth": 330, "strength": 146})
+        depth = float(rod.get("depth", 330))
+        strength = max(1.0, float(rod.get("strength", 146)))
         calc_duration = round((depth / strength) * 1.65 + 0.5, 1)
         override = self.config.get("timings", {}).get("reel_hold_duration_sec", None)
         return override if override is not None else max(3.0, calc_duration)
 
     def calculate_sinking_timeout(self):
-        """Calculates dynamic sinking timeout based on rod depth."""
-        rod = self.config.get("rod_stats", {"depth": 280, "strength": 90})
-        depth = float(rod.get("depth", 280))
-        calc_timeout = round(max(14.0, (depth / 12.0) + 5.0), 1)
-        override = self.config.get("timings", {}).get("sinking_timeout_sec", None)
-        return override if override is not None else calc_timeout
+        rod = self.config.get("rod_stats", {"depth": 330, "strength": 146})
+        depth = float(rod.get("depth", 330))
+        base_timeout = float(self.config.get("timings", {}).get("sinking_timeout_sec", 18.0) or 18.0)
+        calc_timeout = round(max(base_timeout, (depth / 12.0) + 5.0), 1)
+        return calc_timeout
 
     def reload_config(self):
         self.detector.config = self.detector.load_config()
@@ -187,7 +203,7 @@ class FishingBot:
         self.worker_thread = threading.Thread(target=self._bot_loop, daemon=True)
         self.worker_thread.start()
         mode = self.config.get("screen", {}).get("detection_mode", "auto").upper()
-        self.log(f"🚀 บอทเริ่มทำงาน (Dynamic Depth & Adaptive Engine | โหมด: {mode})")
+        self.log(f"🚀 บอทเริ่มทำงาน (6-State Architecture & Global Interrupt | โหมด: {mode})")
 
     def stop(self):
         if not self.is_running:
@@ -200,25 +216,22 @@ class FishingBot:
         self.log("⏹️ บอทหยุดการทำงาน (Stopped)")
 
     def _perform_failsafe_recovery(self):
-        """Emergency recovery: Unequips and Re-equips tool slot 1 and clicks water."""
-        self.log("🚨 [Failsafe Auto-Recovery] เกิด Timeout ติดต่อกัน 2 ครั้ง -> ดำเนินการรีเซ็ตคันเบ็ด (Unequip/Re-equip Slot 1)...")
+        self.log("🚨 [Failsafe Auto-Recovery] เกิด Timeout ติดต่อกัน 2 ครั้ง -> รีเซ็ตคันเบ็ด (Unequip/Re-equip Slot 1)...")
         self.set_progress(100.0, "🚨 Failsafe: กำลังรีเซ็ตคันเบ็ด Slot 1...")
         InputSimulator.move_to_safe_water_zone(self.config)
         InputSimulator.click(0.04)
         time.sleep(0.5)
-        # Toggle unequip slot 1
         InputSimulator.press_key_1()
         time.sleep(1.0)
-        # Toggle re-equip slot 1
         InputSimulator.press_key_1()
         time.sleep(1.5)
         self.consecutive_sinking_timeouts = 0
-        self.log("✅ [Failsafe Recovery] รีเซ็ตคันเบ็ดและตัวละครเรียบร้อยแล้ว พร้อมเริ่มรอบใหม่")
+        self.log("✅ [Failsafe Recovery] รีเซ็ตคันเบ็ดเรียบร้อยแล้ว พร้อมเริ่มรอบใหม่")
 
     def _execute_casting_state(self):
         timings = self.config.get("timings", {})
         features = self.config.get("features", {})
-        min_gate = timings.get("min_charge_gate_sec", 0.30)
+        min_gate = (timings.get("min_charge_gate_ms", 450) or 450) / 1000.0
         backup_timeout = timings.get("charge_backup_sec", 1.4)
         poll_interval = timings.get("cast_poll_interval_sec", 0.005)
         settle_delay = timings.get("cast_settle_delay_sec", 1.0)
@@ -232,7 +245,7 @@ class FishingBot:
                 InputSimulator.click(0.04)
                 time.sleep(1.5)
 
-        # 1. ย้ายเคอร์เซอร์ไป Safe Water Zone
+        # 1. ย้ายเคอร์เซอร์ไป Safe Water Zone (50%, 38%)
         InputSimulator.move_to_safe_water_zone(self.config)
 
         # 2. เริ่มกดค้างเพื่อชาร์จเกจ
@@ -241,7 +254,7 @@ class FishingBot:
         vision_success = False
         last_green_ratio = 0.0
 
-        # 3. High-Frequency Polling Loop with Adaptive Gate
+        # 3. High-Frequency Polling Loop with Min Gate
         while (time.perf_counter() - start_ts) < backup_timeout:
             if not self.is_running:
                 break
@@ -274,7 +287,7 @@ class FishingBot:
         if vision_success:
             self.stats["perfect_casts"] += 1
             self.update_stats()
-            self.log(f"✨ [State 1: Double-Checked ✅] ตรวจพบสีเขียว 2 เฟรมติด ({int(last_green_ratio*100)}%) ที่ {cast_time_ms}ms -> ปล่อยเมาส์ Perfect !")
+            self.log(f"✨ [State 1: Cast] ตรวจพบสีเขียว ({int(last_green_ratio*100)}%) ที่ {cast_time_ms}ms -> ปล่อยเมาส์ทันที (Perfect !)")
         else:
             self.log(f"⚡ [State 1: Cast] ชาร์จครบกำหนด {cast_time_ms}ms -> ปล่อยเมาส์ตาม Safety Backup")
 
@@ -287,9 +300,11 @@ class FishingBot:
         timings = self.config.get("timings", {})
         features = self.config.get("features", {})
 
-        reaction_delay = timings.get("bite_reaction_delay_sec", 0.35)
-        recast_delay = timings.get("recast_delay_sec", 1.8)
-        jitter_interval = timings.get("jitter_interval_sec", 0.12)
+        idle_delay = timings.get("idle_delay_sec", 0.4)
+        reaction_delay = (timings.get("bite_reaction_delay_ms", 350) or 350) / 1000.0
+        recast_delay = timings.get("recast_delay_sec", 1.9)
+        jitter_interval = (timings.get("jitter_interval_ms", 120) or 120) / 1000.0
+        debounce_frames_req = timings.get("debounce_frames", 3)
         scan_interval = timings.get("scan_interval_sec", 0.025)
         anti_afk_interval = timings.get("anti_afk_interval_sec", 120.0)
         cancel_extension_max = timings.get("reeling_cancel_extension_sec", 2.5)
@@ -297,6 +312,9 @@ class FishingBot:
 
         try:
             while self.is_running:
+                # 0. Global Interrupt Check
+                self.check_global_interrupt()
+
                 # Anti-AFK Check
                 if features.get("anti_afk_enabled", True):
                     if time.time() - self.last_anti_afk_time > anti_afk_interval:
@@ -305,30 +323,33 @@ class FishingBot:
                         self.log("🛡️ Anti-AFK ทำงาน (ป้องกัน Roblox Kick)")
 
                 # ====================================================
-                # STATE 0: IDLE / READY (เตรียมตัวละคร)
+                # STATE 0: IDLE / READY (0.4s Fast Standby)
                 # ====================================================
                 self.set_state(BotState.IDLE)
-                self.set_progress(0, "เตรียมความพร้อมตัวละคร (Safe Water Zone)...")
+                self.set_progress(0, "เตรียมความพร้อมตัวละคร (Safe Water Zone 50%, 38%)...")
                 InputSimulator.move_to_safe_water_zone(self.config)
-                time.sleep(0.15)
+                time.sleep(idle_delay)
+
+                # Check Interrupt before Cast
+                self.check_global_interrupt()
 
                 # ====================================================
-                # STATE 1: CASTING (ชาร์จเกจพลังงาน)
+                # STATE 1: CASTING (Sub-ROI 15% + 450ms Min Gate)
                 # ====================================================
                 self.set_state(BotState.CASTING)
-                self.log("🎣 [State 1: Casting] ส่ง MouseDown ชาร์จเกจพลังงาน (สแกนสีเขียวหัวเกจ)...")
+                self.log("🎣 [State 1: Casting] ส่ง MouseDown ชาร์จเกจพลังงาน (Min Gate 450ms)...")
                 self.stats["casts_count"] += 1
                 self.update_stats()
 
                 self._execute_casting_state()
 
                 # ====================================================
-                # STATE 2: SINKING (Dynamic Depth Sinking & Double-Check)
+                # STATE 2: SINKING (Dual Anchor '!'/Hold | Dynamic 18.0s+ Timeout)
                 # ====================================================
                 self.set_state(BotState.SINKING)
                 sinking_timeout = self.calculate_sinking_timeout()
-                depth_val = self.config.get("rod_stats", {}).get("depth", 280)
-                self.log(f"🌊 [State 2: Sinking] สายเบ็ดกำลังจมลงสู่ใต้ทะเล (Depth: {depth_val}m | Dynamic Timeout: {sinking_timeout}s)...")
+                depth_val = self.config.get("rod_stats", {}).get("depth", 330)
+                self.log(f"🌊 [State 2: Sinking] สายเบ็ดกำลังจมลงสู่ใต้ทะเล (Depth: {depth_val}m | Timeout: {sinking_timeout}s)...")
                 
                 start_sink = time.time()
                 hooked = False
@@ -338,19 +359,25 @@ class FishingBot:
                     if not self.is_running:
                         break
 
+                    # Check Global Interrupt during sinking
+                    if self.check_global_interrupt():
+                        pass
+
                     elapsed_sink = time.time() - start_sink
                     sink_pct = min(100.0, (elapsed_sink / sinking_timeout) * 100.0)
                     
-                    is_text, details = self.detector.detect_hold_text()
+                    is_detected, details = self.detector.detect_hold_anchor()
                     last_score = details.get("match_score", 0.0)
+                    has_excl = details.get("has_exclamation", False)
                     
-                    self.set_progress(sink_pct, f"สายเบ็ดกำลังจมน้ำ (Depth: {depth_val}m)... ({elapsed_sink:.1f}s / {sinking_timeout:.1f}s) | Match: {int(last_score*100)}%")
+                    anchor_text = "ปลาติดเบ็ด (!)" if has_excl else f"Match: {int(last_score*100)}%"
+                    self.set_progress(sink_pct, f"สายเบ็ดกำลังจมน้ำ (Depth: {depth_val}m)... ({elapsed_sink:.1f}s / {sinking_timeout:.1f}s) | {anchor_text}")
 
-                    if is_text:
+                    if is_detected:
                         if double_check:
                             time.sleep(0.025)
-                            is_text_2, details_2 = self.detector.detect_hold_text()
-                            if is_text_2:
+                            is_det_2, details_2 = self.detector.detect_hold_anchor()
+                            if is_det_2:
                                 hooked = True
                                 last_score = details_2.get("match_score", last_score)
                                 break
@@ -366,50 +393,49 @@ class FishingBot:
                     InputSimulator.click(duration=0.04)
                     time.sleep(1.2)
 
-                    # Trigger Failsafe Auto-Recovery if timed out 2 times in a row
                     if features.get("failsafe_auto_recovery", True) and self.consecutive_sinking_timeouts >= 2:
                         self._perform_failsafe_recovery()
                     continue
 
-                # Reset timeout streak on successful hook
                 self.consecutive_sinking_timeouts = 0
 
                 # ====================================================
-                # STATE 2 -> STATE 3 TRANSITION: BITE REACTION DELAY
+                # TRANSITION: BITE REACTION DELAY (350ms)
                 # ====================================================
                 InputSimulator.mouse_up()
-                self.log(f"🐟 [State 2->3: Double-Checked ✅] ยืนยัน 'Hold to fish' 2 เฟรมติด (Match: {int(last_score*100)}%) -> หน่วง Reaction {int(reaction_delay*1000)}ms...")
-                self.set_progress(100.0, f"ยืนยันปลาติดเบ็ด 100%! (Match: {int(last_score*100)}%) สลับเข้าสู่ Reeling...")
+                self.log(f"🐟 [Transition: Bite Reaction] ตรวจพบปลาติดเบ็ด! (Match: {int(last_score*100)}%) -> หน่วง {int(reaction_delay*1000)}ms...")
+                self.set_progress(100.0, f"ปลาติดเบ็ด! กำลังสลับเข้าสู่ Reeling ({int(reaction_delay*1000)}ms)...")
                 time.sleep(reaction_delay)
 
                 InputSimulator.move_to_safe_water_zone(self.config)
                 InputSimulator.mouse_down()
 
                 # ====================================================
-                # STATE 3: REELING PROCESS (กดค้างดึงปลา + Double-Check Cancel Button)
+                # STATE 3: REELING PROCESS (Adaptive Vision & Micro-Jitter 120ms)
                 # ====================================================
                 self.set_state(BotState.REELING)
                 reel_hold_duration = self.calculate_reel_duration()
-                self.log(f"🎣 [State 3: Reeling] เริ่มกดคลิกซ้ายค้างดึงปลาเต็มเวลา ({reel_hold_duration}s) + Micro-Jitter ทุก 120ms...")
+                self.log(f"🎣 [State 3: Reeling] เริ่มกดคลิกซ้ายค้างดึงปลา ({reel_hold_duration}s) + Micro-Jitter ทุก 120ms...")
 
                 start_reel = time.perf_counter()
                 last_jitter = time.time()
 
+                # Reeling hold loop
                 while self.is_running and (time.perf_counter() - start_reel) < reel_hold_duration:
                     now = time.time()
                     elapsed_reel = time.perf_counter() - start_reel
                     reel_pct = min(100.0, (elapsed_reel / reel_hold_duration) * 100.0)
-                    self.set_progress(reel_pct, f"กำลังกดค้างดึงปลา: {elapsed_reel:.1f}s / {reel_hold_duration:.1f}s (Micro-Jitter Active)")
+                    self.set_progress(reel_pct, f"กำลังกดค้างดึงปลา: {elapsed_reel:.1f}s / {reel_hold_duration:.1f}s (Micro-Jitter 120ms)")
 
                     if now - last_jitter >= jitter_interval:
                         InputSimulator.send_micro_jitter()
                         last_jitter = now
                     time.sleep(scan_interval)
 
-                # DOUBLE-CHECK 3: Check if red Cancel button is still on screen after base time
+                # State 3 Extension check: verify red Cancel button absence
                 if double_check and self.is_running:
                     if self.detector.detect_red_cancel_button():
-                        self.log(f"⚠️ [State 3 Double-Check] ครบเวลา {reel_hold_duration}s แต่ปุ่ม Cancel ยังอยู่ -> ขยายเวลากดค้างต่ออัตโนมัติ (สูงสุด +{cancel_extension_max}s)...")
+                        self.log(f"⚠️ [State 3 Validation] ครบเวลา {reel_hold_duration}s แต่ปุ่ม Cancel ยังอยู่ -> ขยายเวลากดค้างต่ออัตโนมัติ (สูงสุด +{cancel_extension_max}s)...")
                         ext_start = time.perf_counter()
                         while self.is_running and (time.perf_counter() - ext_start) < cancel_extension_max:
                             now = time.time()
@@ -421,27 +447,31 @@ class FishingBot:
                                 last_jitter = now
 
                             if not self.detector.detect_red_cancel_button():
-                                self.log(f"✨ [State 3 Double-Check] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย!")
+                                self.log(f"✨ [State 3 Validation] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย!")
                                 break
                             time.sleep(scan_interval)
 
                 InputSimulator.mouse_up()
                 self.stats["fish_caught"] += 1
                 self.update_stats()
-                self.log(f"🎉 [State 3: Double-Checked ✅] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
+                self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+1 ตัว รวม {self.stats['fish_caught']} ตัว)")
 
                 # ====================================================
-                # STATE 4: LOOT & FAST RESET (Click Left Tap to Dismiss Card & Cast)
+                # STATE 4: LOOT & FAST RESET (1.9s Recast + Click-to-Dismiss)
                 # ====================================================
                 self.set_state(BotState.LOOT_RESET)
                 self.log(f"⏳ [State 4: Loot & Reset] รอการ์ดแสดงผล ({recast_delay}s)... ส่งคลิกซ้าย 1 ครั้งเพื่อข้ามการ์ดและเตรียมเหวี่ยงเบ็ด")
 
-                time.sleep(0.6)
+                time.sleep(0.5)
 
+                # Check global interrupt / Legendary popup
+                self.check_global_interrupt()
+
+                # Left Click at Safe Zone to dismiss notification cards
                 InputSimulator.move_to_safe_water_zone(self.config)
                 InputSimulator.click(duration=0.04)
 
-                remaining_recast = max(0.4, recast_delay - 0.6)
+                remaining_recast = max(0.4, recast_delay - 0.5)
                 start_loot = time.time()
                 while time.time() - start_loot < remaining_recast:
                     if not self.is_running:
