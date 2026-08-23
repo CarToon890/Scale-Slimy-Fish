@@ -404,9 +404,9 @@ class FishingBotApp:
             command=self.open_point_selector
         ).pack(side="right")
 
-        # 2. Dual Camera Monitors (Side-by-Side, ~190x95px)
+        # 2. Dual Camera Monitors (Side-by-Side, compact height)
         cam_frame = tk.Frame(self.tab_monitor, bg=ModernColors.BG_DARK)
-        cam_frame.pack(fill="both", expand=True, padx=4, pady=2)
+        cam_frame.pack(fill="x", padx=4, pady=2)
 
         # Monitor 1: Power Bar
         c1 = tk.LabelFrame(
@@ -420,8 +420,8 @@ class FishingBotApp:
         )
         c1.pack(side="left", fill="both", expand=True, padx=(0, 2))
 
-        self.img_lbl_pb = tk.Label(c1, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG)
-        self.img_lbl_pb.pack(fill="both", expand=True, pady=1)
+        self.img_lbl_pb = tk.Label(c1, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG, height=5)
+        self.img_lbl_pb.pack(fill="x", pady=1)
 
         self.status_lbl_pb = tk.Label(c1, text="⚪ สตรีมสด...", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG)
         self.status_lbl_pb.pack()
@@ -444,8 +444,8 @@ class FishingBotApp:
         )
         c2.pack(side="left", fill="both", expand=True, padx=(2, 0))
 
-        self.img_lbl_hold = tk.Label(c2, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG)
-        self.img_lbl_hold.pack(fill="both", expand=True, pady=1)
+        self.img_lbl_hold = tk.Label(c2, text="[กำลังต่อกล้อง...]", fg=ModernColors.TEXT_MUTED, bg=ModernColors.PREVIEW_BG, height=5)
+        self.img_lbl_hold.pack(fill="x", pady=1)
 
         self.status_lbl_hold = tk.Label(c2, text="⚪ สตรีมสด...", font=("Segoe UI", 7, "bold"), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG)
         self.status_lbl_hold.pack()
@@ -470,6 +470,69 @@ class FishingBotApp:
             bg="#8957e5", fg="white", relief="flat",
             command=self.open_continue_capture_selector
         ).pack(side="right", fill="x", expand=True, padx=(1, 0))
+
+        # 3. Session Analytics & Performance Dashboard Card
+        analytics_card = tk.LabelFrame(
+            self.tab_monitor,
+            text=" 📊 สถิติประสิทธิภาพรอบการตก (Live Session Analytics) ",
+            font=("Segoe UI", 8, "bold"),
+            fg=ModernColors.ACCENT_BLUE,
+            bg=ModernColors.CARD_BG,
+            padx=4,
+            pady=2
+        )
+        analytics_card.pack(fill="x", padx=4, pady=2)
+
+        a_row = tk.Frame(analytics_card, bg=ModernColors.CARD_BG)
+        a_row.pack(fill="x")
+
+        # Tile 1: Speed (Fish/Hr)
+        t1 = tk.Frame(a_row, bg="#11111b", padx=4, pady=2)
+        t1.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        tk.Label(t1, text="⚡ ความเร็วการตก", font=("Segoe UI", 6, "bold"), fg=ModernColors.TEXT_MUTED, bg="#11111b").pack(anchor="w")
+        self.lbl_rate = tk.Label(t1, text="0.0 ตัว/ชม.", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_GREEN, bg="#11111b")
+        self.lbl_rate.pack(anchor="w")
+
+        # Tile 2: Perfect %
+        t2 = tk.Frame(a_row, bg="#11111b", padx=4, pady=2)
+        t2.pack(side="left", fill="x", expand=True, padx=2)
+        tk.Label(t2, text="✨ อัตรา Perfect", font=("Segoe UI", 6, "bold"), fg=ModernColors.TEXT_MUTED, bg="#11111b").pack(anchor="w")
+        self.lbl_perfect_pct = tk.Label(t2, text="0.0%", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_YELLOW, bg="#11111b")
+        self.lbl_perfect_pct.pack(anchor="w")
+
+        # Tile 3: Avg Cycle Time
+        t3 = tk.Frame(a_row, bg="#11111b", padx=4, pady=2)
+        t3.pack(side="left", fill="x", expand=True, padx=(2, 0))
+        tk.Label(t3, text="⏱️ เฉลี่ยต่อตัว", font=("Segoe UI", 6, "bold"), fg=ModernColors.TEXT_MUTED, bg="#11111b").pack(anchor="w")
+        self.lbl_avg_time = tk.Label(t3, text="0.0s", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_PURPLE, bg="#11111b")
+        self.lbl_avg_time.pack(anchor="w")
+
+        # 4. Live Mini-Log Console (Takes remaining space)
+        mini_log_card = tk.LabelFrame(
+            self.tab_monitor,
+            text=" 📋 บันทึกการทำงานสด (Live Activity Stream) ",
+            font=("Segoe UI", 8, "bold"),
+            fg=ModernColors.ACCENT_GREEN,
+            bg=ModernColors.CARD_BG,
+            padx=4,
+            pady=2
+        )
+        mini_log_card.pack(fill="both", expand=True, padx=4, pady=(2, 2))
+
+        self.mini_log_text = tk.Text(
+            mini_log_card,
+            bg="#11111b",
+            fg=ModernColors.TEXT_MAIN,
+            font=("Consolas", 7),
+            relief="flat",
+            wrap="word",
+            height=6
+        )
+        self.mini_log_text.pack(side="left", fill="both", expand=True)
+
+        mini_scroll = tk.Scrollbar(mini_log_card, command=self.mini_log_text.yview)
+        mini_scroll.pack(side="right", fill="y")
+        self.mini_log_text.config(yscrollcommand=mini_scroll.set)
 
     def build_tab_settings(self):
         container = tk.Frame(self.tab_settings, bg=ModernColors.BG_DARK, padx=4, pady=2)
@@ -921,8 +984,18 @@ class FishingBotApp:
 
     def append_log(self, message):
         def _append():
-            self.log_text.insert(tk.END, message + "\n")
-            self.log_text.see(tk.END)
+            if hasattr(self, "log_text"):
+                self.log_text.insert(tk.END, message + "\n")
+                self.log_text.see(tk.END)
+            if hasattr(self, "mini_log_text"):
+                self.mini_log_text.insert(tk.END, message + "\n")
+                self.mini_log_text.see(tk.END)
+                try:
+                    lines = int(self.mini_log_text.index('end-1c').split('.')[0])
+                    if lines > 120:
+                        self.mini_log_text.delete('1.0', f'{lines - 100}.0')
+                except:
+                    pass
         self.root.after(0, _append)
 
     def update_state_display(self, new_state: BotState):
@@ -937,19 +1010,40 @@ class FishingBotApp:
 
     def update_stats_display(self, stats):
         def _update():
-            self.lbl_casts.config(text=f"🎣 {stats['casts_count']}")
-            self.lbl_fish.config(text=f"🐟 {stats['fish_caught']} ตัว")
-            self.lbl_perfect.config(text=f"✨ {stats['perfect_casts']}")
+            casts = stats.get('casts_count', 0)
+            fish = stats.get('fish_caught', 0)
+            perfect = stats.get('perfect_casts', 0)
+            uptime = stats.get('uptime_seconds', 0)
+
+            self.lbl_casts.config(text=f"🎣 {casts}")
+            self.lbl_fish.config(text=f"🐟 {fish} ตัว")
+            self.lbl_perfect.config(text=f"✨ {perfect}")
+
+            perf_pct = round((perfect / max(1, casts)) * 100.0, 1)
+            self.lbl_perfect_pct.config(text=f"{perf_pct:.1f}%")
+
+            if uptime > 5 and fish > 0:
+                rate = round((fish / (uptime / 3600.0)), 1)
+                avg_time = round(uptime / max(1, fish), 1)
+                self.lbl_rate.config(text=f"{rate:.1f} ตัว/ชม.")
+                self.lbl_avg_time.config(text=f"{avg_time:.1f}s")
         self.root.after(0, _update)
 
     def start_uptime_timer(self):
         def _tick():
-            if self.bot.is_running and self.bot.stats["start_time"]:
+            if self.bot.is_running and self.bot.stats.get("start_time"):
                 elapsed = int(time.time() - self.bot.stats["start_time"])
                 hrs = elapsed // 3600
                 mins = (elapsed % 3600) // 60
                 secs = elapsed % 60
                 self.lbl_uptime.config(text=f"⏱️ {hrs:02d}:{mins:02d}:{secs:02d}")
+
+                fish = self.bot.stats.get("fish_caught", 0)
+                if elapsed > 10 and fish > 0:
+                    rate = round((fish / (elapsed / 3600.0)), 1)
+                    avg_time = round(elapsed / max(1, fish), 1)
+                    self.lbl_rate.config(text=f"{rate:.1f} ตัว/ชม.")
+                    self.lbl_avg_time.config(text=f"{avg_time:.1f}s")
             self.root.after(1000, _tick)
         self.root.after(1000, _tick)
 

@@ -63,7 +63,7 @@
     "cast_settle_delay_sec": 1.0,
     "sinking_timeout_sec": 32.5,
     "bite_reaction_delay_ms": 350,
-    "reel_hold_duration_sec": 5.5,
+    "reel_hold_duration_sec": 4.2,
     "reeling_cancel_extension_sec": 5.0,
     "jitter_interval_ms": 120,
     "debounce_frames": 3,
