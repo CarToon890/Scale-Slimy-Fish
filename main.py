@@ -767,6 +767,78 @@ class FishingBotApp:
             selectcolor="#11111b", command=self.on_toggle_feature
         ).pack(anchor="w")
 
+        # Section 3: Visual ROI Calibration (All 5 Detection Points)
+        s3 = tk.LabelFrame(
+            container,
+            text=" 🎯 กำหนดและปรับแต่งพื้นที่ตรวจจับ (Visual ROI Calibration) ",
+            font=("Segoe UI", 8, "bold"),
+            fg=ModernColors.ACCENT_PURPLE,
+            bg=ModernColors.CARD_BG,
+            padx=6,
+            pady=3
+        )
+        s3.pack(fill="x", pady=2)
+
+        # Row 1: Fishing Core Detection (Points 1 & 2)
+        r1 = tk.Frame(s3, bg=ModernColors.CARD_BG)
+        r1.pack(fill="x", pady=1)
+
+        tk.Button(
+            r1, text="🎯 กรอบ Power Bar", font=("Segoe UI", 7, "bold"),
+            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_GREEN, relief="flat",
+            command=lambda: self.open_roi_selector("Power Bar (เกจพลังงาน)", "cast_bar_roi")
+        ).pack(side="left", fill="x", expand=True, padx=(0, 1))
+
+        tk.Button(
+            r1, text="🎯 กรอบ Hold", font=("Segoe UI", 7, "bold"),
+            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_YELLOW, relief="flat",
+            command=lambda: self.open_roi_selector("Hold to fish (กรอบค้นหา)", "hold_roi")
+        ).pack(side="left", fill="x", expand=True, padx=1)
+
+        tk.Button(
+            r1, text="📸 แคป Hold", font=("Segoe UI", 7, "bold"),
+            bg="#238636", fg="white", relief="flat",
+            command=self.open_template_capture_selector
+        ).pack(side="right", fill="x", expand=True, padx=(1, 0))
+
+        # Row 2: Safety & Interruption Detection (Points 3, 4, 5)
+        r2 = tk.Frame(s3, bg=ModernColors.CARD_BG)
+        r2.pack(fill="x", pady=1)
+
+        tk.Button(
+            r2, text="🛑 กรอบปุ่ม Cancel", font=("Segoe UI", 7, "bold"),
+            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_RED, relief="flat",
+            command=lambda: self.open_roi_selector("ปุ่มสีแดง Cancel (ขอบล่าง)", "cancel_btn_roi")
+        ).pack(side="left", fill="x", expand=True, padx=(0, 1))
+
+        tk.Button(
+            r2, text="🏆 กรอบ Continue", font=("Segoe UI", 7, "bold"),
+            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_BLUE, relief="flat",
+            command=lambda: self.open_roi_selector("ป๊อปอัป Click to Continue", "modal_continue_roi")
+        ).pack(side="left", fill="x", expand=True, padx=1)
+
+        tk.Button(
+            r2, text="📸 แคป Continue", font=("Segoe UI", 7, "bold"),
+            bg="#8957e5", fg="white", relief="flat",
+            command=self.open_continue_capture_selector
+        ).pack(side="right", fill="x", expand=True, padx=(1, 0))
+
+        # Row 3: Inventory Full ROI & Diagnostics
+        r3 = tk.Frame(s3, bg=ModernColors.CARD_BG)
+        r3.pack(fill="x", pady=1)
+
+        tk.Button(
+            r3, text="🎒 กรอบตรวจกระเป๋าเต็ม", font=("Segoe UI", 7, "bold"),
+            bg=ModernColors.BORDER, fg=ModernColors.ACCENT_YELLOW, relief="flat",
+            command=lambda: self.open_roi_selector("แจ้งเตือนกระเป๋าเต็ม (Inventory full)", "inventory_full_roi")
+        ).pack(side="left", fill="x", expand=True, padx=(0, 1))
+
+        tk.Button(
+            r3, text="🧪 ทดสอบสแกนทั้ง 5 จุด (Live Vision Test)", font=("Segoe UI", 7, "bold"),
+            bg="#1f2335", fg=ModernColors.ACCENT_GREEN, relief="flat",
+            command=self.run_live_vision_diagnostic
+        ).pack(side="right", fill="x", expand=True, padx=(1, 0))
+
         tk.Button(
             container, text="🔄 รีเซ็ตค่าเริ่มต้น (Factory Defaults)",
             font=("Segoe UI", 7, "bold"), bg=ModernColors.BORDER, fg=ModernColors.ACCENT_YELLOW, relief="flat",
@@ -1061,8 +1133,43 @@ class FishingBotApp:
             self.config["screen"]["mouse_target"] = pt_ratio
             self.save_config()
             self.append_log(f"✅ บันทึก Safe Zone: {pt_ratio}")
+            messagebox.showinfo("สำเร็จ", "บันทึกพิกัด Safe Water Zone เรียบร้อยแล้ว!")
 
         FullscreenFrozenSelector(self.root, "Safe Water Zone", mode="point", on_selected=_on_selected)
+
+    def run_live_vision_diagnostic(self):
+        self.append_log("🧪 กำลังทดสอบสแกนหน้าจอทั้ง 5 จุด...")
+        
+        mode = self.config.get("screen", {}).get("detection_mode", "auto")
+        if mode == "auto":
+            pb_frame = self.bot.detector.capture_auto_cast_area()
+            hold_frame = self.bot.detector.capture_auto_hold_area()
+        else:
+            pb_frame = self.bot.detector.capture_cast_bar()
+            hold_frame = self.bot.detector.capture_hold_text()
+
+        is_green, pb_details = self.bot.detector.detect_green_peak(pb_frame, force_mode=mode)
+        is_hold, hold_details = self.bot.detector.detect_hold_anchor(hold_frame, force_mode=mode)
+        is_cancel = self.bot.detector.detect_red_cancel_button()
+        is_continue = self.bot.detector.is_click_to_continue_present()
+        is_inv_full = self.bot.detector.is_inventory_full()
+
+        score_pct = int(hold_details.get("match_score", 0.0) * 100)
+        green_pct = int(pb_details.get("green_ratio", 0.0) * 100) if "green_ratio" in pb_details else int(pb_details.get("green_pixels", 0))
+
+        diag_report = (
+            "📊 ผลการตรวจสอบภาพสดบนหน้าจอ (Live Vision Diagnostic):\n"
+            "────────────────────────────────────────────\n"
+            f"1. ⚡ Power Bar (เกจ):  {'🟢 พบแถบสีเขียว (' + str(green_pct) + '%)' if is_green else '⚪ ไม่พบ (' + str(green_pct) + '%)'}\n"
+            f"2. 🐟 Hold to Fish:    {'🟢 ตรวจพบ (' + str(score_pct) + '%)' if is_hold else '⚪ ไม่พบ (' + str(score_pct) + '%)'}\n"
+            f"3. 🛑 ปุ่ม Cancel:       {'🔴 ตรวจพบปุ่ม Cancel' if is_cancel else '⚪ ไม่พบปุ่ม Cancel'}\n"
+            f"4. 🏆 ป๊อปอัป Continue: {'🏆 ตรวจพบป๊อปอัปปลาใหม่' if is_continue else '⚪ ไม่พบป๊อปอัป'}\n"
+            f"5. 🎒 แจ้งเตือนกระเป๋า:  {'🚨 ตรวจพบกระเป๋าเต็ม!' if is_inv_full else '🟢 กระเป๋าปกติ (ไม่เต็ม)'}\n"
+            "────────────────────────────────────────────\n"
+            "💡 หากจุดใดไม่ตรงตามที่ต้องการ สามารถคลิกปุ่มลากกรอบใหม่ได้ทันที"
+        )
+        self.append_log(f"🧪 รายงานผล: PB={is_green} | Hold={is_hold} | Cancel={is_cancel} | Cont={is_continue} | InvFull={is_inv_full}")
+        messagebox.showinfo("🧪 ผลการตรวจสอบภาพสด (Vision Diagnostic)", diag_report)
 
     def setup_hotkeys(self):
         def on_f6():

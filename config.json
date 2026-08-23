@@ -52,8 +52,8 @@
     }
   },
   "rod_stats": {
-    "depth": 330.0,
-    "strength": 146.0
+    "depth": 380.0,
+    "strength": 117.0
   },
   "timings": {
     "idle_delay_sec": 0.4,
@@ -61,9 +61,9 @@
     "charge_backup_sec": 1.4,
     "cast_poll_interval_sec": 0.005,
     "cast_settle_delay_sec": 1.0,
-    "sinking_timeout_sec": 32.5,
+    "sinking_timeout_sec": 36.7,
     "bite_reaction_delay_ms": 350,
-    "reel_hold_duration_sec": 4.2,
+    "reel_hold_duration_sec": 5.9,
     "reeling_cancel_extension_sec": 5.0,
     "jitter_interval_ms": 120,
     "debounce_frames": 3,
