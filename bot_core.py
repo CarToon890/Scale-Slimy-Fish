@@ -286,6 +286,11 @@ class FishingBot:
         settle_delay = timings.get("cast_settle_delay_sec", 1.0)
         double_check = features.get("double_check_enabled", True)
 
+        # Quick check before cast: if Cancel button is already present, abort cast and jump to State 3
+        if self.detector.detect_red_cancel_button():
+            self.log("🛑 [State 1 Check] ตรวจพบปุ่ม Cancel ปรากฏอยู่แล้ว -> ข้ามไปยัง State 3 ทันที!")
+            return "CANCEL_FOUND"
+
         # 1. ย้ายเคอร์เซอร์ไป Safe Water Zone (50%, 38%)
         InputSimulator.move_to_safe_water_zone(self.config)
 
@@ -303,6 +308,12 @@ class FishingBot:
             elapsed = time.perf_counter() - start_ts
             pct = min(100.0, (elapsed / backup_timeout) * 100.0)
             self.set_progress(pct, f"กำลังชาร์จเกจพลังงาน: {int(elapsed*1000)}ms / {int(backup_timeout*1000)}ms")
+
+            # Check if Cancel button appeared during cast
+            if self.detector.detect_red_cancel_button():
+                InputSimulator.mouse_up()
+                self.log("🛑 [State 1 Cast Intercept] ตรวจพบปุ่ม Cancel ปรากฏขึ้นระหว่างชาร์จ -> ข้ามไปยัง State 3 ทันที!")
+                return "CANCEL_FOUND"
 
             if elapsed >= min_gate:
                 is_green, details = self.detector.detect_green_peak()
@@ -337,6 +348,82 @@ class FishingBot:
         time.sleep(settle_delay)
         return vision_success
 
+    def _execute_reeling_state(self, timings, features):
+        self.set_state(BotState.REELING)
+        cancel_roi = self.config.get("screen", {}).get("cancel_btn_roi")
+        self.set_overlay(cancel_roi, "#ff79c6", "🎣 ดึงปลา / เช็กปุ่ม Cancel (State 3)")
+        reel_hold_duration = self.calculate_reel_duration()
+        jitter_interval = (timings.get("jitter_interval_ms", 120) or 120) / 1000.0
+        scan_interval = timings.get("scan_interval_sec", 0.025)
+        cancel_extension_max = float(timings.get("reeling_cancel_extension_max_sec", 35.0) or 35.0)
+        cancel_extension_enabled = features.get("cancel_extension_enabled", True)
+
+        self.log(f"🎣 [State 3: Reeling] เริ่มกดคลิกซ้ายค้างดึงปลา ({reel_hold_duration}s) + Micro-Jitter ทุก 120ms...")
+        InputSimulator.move_to_safe_water_zone(self.config)
+        InputSimulator.mouse_down()
+
+        start_reel = time.perf_counter()
+        last_jitter = time.time()
+
+        # Reeling hold loop
+        while self.is_running and (time.perf_counter() - start_reel) < reel_hold_duration:
+            now = time.time()
+            elapsed_reel = time.perf_counter() - start_reel
+            reel_pct = min(100.0, (elapsed_reel / reel_hold_duration) * 100.0)
+            self.set_progress(reel_pct, f"กำลังกดค้างดึงปลา: {elapsed_reel:.1f}s / {reel_hold_duration:.1f}s (Micro-Jitter 120ms)")
+
+            if now - last_jitter >= jitter_interval:
+                InputSimulator.send_micro_jitter()
+                last_jitter = now
+            time.sleep(scan_interval)
+
+        if cancel_extension_enabled and self.is_running:
+            # Mode A: Cancel Extension Enabled (Keep reeling until fish surfaces)
+            if self.detector.detect_red_cancel_button():
+                self.log(f"🔄 [Cancel Auto-Extension] ครบเวลา {reel_hold_duration:.1f}s แต่ปุ่ม Cancel ยังคงอยู่ -> กดค้างดึงต่อไปเรื่อยๆ จนกว่าปุ่ม Cancel จะหายไป...")
+                ext_start = time.perf_counter()
+                while self.is_running and (time.perf_counter() - ext_start) < cancel_extension_max:
+                    now = time.time()
+                    elapsed_ext = time.perf_counter() - ext_start
+                    self.set_progress(100.0, f"กำลังกดดึงต่ออัตโนมัติ: +{elapsed_ext:.1f}s (รอปุ่ม Cancel หายไป)...")
+
+                    if now - last_jitter >= jitter_interval:
+                        InputSimulator.send_micro_jitter()
+                        last_jitter = now
+
+                    # Check if Cancel button has disappeared
+                    if not self.detector.detect_red_cancel_button():
+                        time.sleep(0.02)
+                        if not self.detector.detect_red_cancel_button():
+                            self.log(f"✨ [Cancel Auto-Extension] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย! ปล่อยเมาส์ทันที")
+                            break
+                    time.sleep(scan_interval)
+
+            InputSimulator.mouse_up()
+            rod_cap = max(1, int(self.config.get("rod_stats", {}).get("capacity", 1) or 1))
+            self.stats["fish_caught"] += rod_cap
+            self.update_stats()
+            self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+{rod_cap} ตัว รวม {self.stats['fish_caught']} ตัว)")
+            return True
+
+        else:
+            # Mode B: Cancel Extension Disabled (Release mouse at exact time, click Cancel if still present)
+            InputSimulator.mouse_up()
+            time.sleep(0.08)
+
+            if self.is_running and self.detector.detect_red_cancel_button():
+                self.log(f"🛑 [Fast Cancel Reset] ครบเวลาดึงปลา {reel_hold_duration:.1f}s แต่ปลายังไม่ขึ้นน้ำ (ปิดสวิตช์ Extension) -> คลิกปุ่ม Cancel เพื่อตัดสายและวนกลับไปเหวี่ยงเบ็ด State 1 ทันที!")
+                self.set_progress(100.0, "🛑 กำลังคลิกปุ่ม Cancel เพื่อตัดสายเบ็ดและเริ่มเหวี่ยงใหม่...")
+                InputSimulator.click_cancel_button(self.config)
+                time.sleep(0.4)
+                return False  # Failed to reel in time, line cancelled
+            else:
+                rod_cap = max(1, int(self.config.get("rod_stats", {}).get("capacity", 1) or 1))
+                self.stats["fish_caught"] += rod_cap
+                self.update_stats()
+                self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบตามเวลา {reel_hold_duration:.1f}s (+{rod_cap} ตัว รวม {self.stats['fish_caught']} ตัว)")
+                return True
+
     def _bot_loop(self):
         timings = self.config.get("timings", {})
         features = self.config.get("features", {})
@@ -344,10 +431,8 @@ class FishingBot:
         idle_delay = timings.get("idle_delay_sec", 0.4)
         reaction_delay = (timings.get("bite_reaction_delay_ms", 350) or 350) / 1000.0
         recast_delay = timings.get("recast_delay_sec", 1.9)
-        jitter_interval = (timings.get("jitter_interval_ms", 120) or 120) / 1000.0
         scan_interval = timings.get("scan_interval_sec", 0.025)
         anti_afk_interval = timings.get("anti_afk_interval_sec", 120.0)
-        cancel_extension_max = timings.get("reeling_cancel_extension_sec", 2.5)
         double_check = features.get("double_check_enabled", True)
 
         try:
@@ -365,6 +450,16 @@ class FishingBot:
                     if not self.is_running:
                         break
 
+                # Cancel Intercept Check at loop start (Any State -> State 3)
+                if self.detector.detect_red_cancel_button():
+                    self.log("🛑 [Cancel Intercept] ตรวจพบปุ่ม Cancel อยู่บนหน้าจอ (สายเบ็ดอยู่ในน้ำแล้ว) -> สลับเข้าสู่ STATE 3: REELING ทันที!")
+                    reeling_success = self._execute_reeling_state(timings, features)
+                    if not reeling_success:
+                        continue
+                    # Proceed to State 4
+                    self._execute_loot_state(recast_delay)
+                    continue
+
                 # Anti-AFK Check
                 if features.get("anti_afk_enabled", True):
                     if time.time() - self.last_anti_afk_time > anti_afk_interval:
@@ -381,10 +476,18 @@ class FishingBot:
                 InputSimulator.move_to_safe_water_zone(self.config)
                 time.sleep(idle_delay)
 
-                # Check Interrupt before Cast
+                # Check Interrupt & Cancel Button before Cast
                 if self.check_global_interrupt():
                     if not self.is_running:
                         break
+
+                if self.detector.detect_red_cancel_button():
+                    self.log("🛑 [State 0 Cancel Intercept] ตรวจพบปุ่ม Cancel อยู่บนหน้าจอ -> สลับเข้าสู่ STATE 3: REELING ทันที!")
+                    reeling_success = self._execute_reeling_state(timings, features)
+                    if not reeling_success:
+                        continue
+                    self._execute_loot_state(recast_delay)
+                    continue
 
                 # ====================================================
                 # STATE 1: CASTING (Sub-ROI 15% + 450ms Min Gate)
@@ -395,7 +498,16 @@ class FishingBot:
                 self.set_overlay(cast_roi, "#50fa7b", "🎣 สแกนเกจ Power Bar (State 1)")
                 self.log("🎣 [State 1: Casting] ส่ง MouseDown ชาร์จเกจพลังงาน (Min Gate 450ms)...")
                 self.stats["casts_count"] += 1
-                is_perfect = self._execute_casting_state()
+                cast_result = self._execute_casting_state()
+
+                if cast_result == "CANCEL_FOUND":
+                    reeling_success = self._execute_reeling_state(timings, features)
+                    if not reeling_success:
+                        continue
+                    self._execute_loot_state(recast_delay)
+                    continue
+
+                is_perfect = (cast_result is True)
 
                 # ====================================================
                 # STATE 2: SINKING (Dual Anchor '!'/Hold | Dynamic Timeout)
@@ -474,6 +586,13 @@ class FishingBot:
                         else:
                             hooked = True
                             break
+
+                    # Check Cancel Button presence in State 2 (Immediate State 3 Transition)
+                    if self.detector.detect_red_cancel_button():
+                        self.log("🛑 [State 2 Cancel Intercept] ตรวจพบปุ่ม Cancel ปรากฏบนหน้าจอ -> เข้าสู่ STATE 3: REELING ทันที!")
+                        hooked = True
+                        break
+
                     time.sleep(scan_interval)
 
                 if not self.is_running:
@@ -499,116 +618,21 @@ class FishingBot:
                 # TRANSITION: BITE REACTION DELAY (350ms)
                 # ====================================================
                 InputSimulator.mouse_up()
-                self.log(f"🐟 [Transition: Bite Reaction] ตรวจพบปลาติดเบ็ด! (Match: {int(last_score*100)}%) -> หน่วง {int(reaction_delay*1000)}ms...")
+                self.log(f"🐟 [Transition: Bite Reaction] ตรวจพบปลาติดเบ็ด/ปุ่ม Cancel! (Match: {int(last_score*100)}%) -> หน่วง {int(reaction_delay*1000)}ms...")
                 self.set_progress(100.0, f"ปลาติดเบ็ด! กำลังสลับเข้าสู่ Reeling ({int(reaction_delay*1000)}ms)...")
                 time.sleep(reaction_delay)
-
-                InputSimulator.move_to_safe_water_zone(self.config)
-                InputSimulator.mouse_down()
 
                 # ====================================================
                 # STATE 3: REELING PROCESS (Adaptive Vision & Micro-Jitter 120ms)
                 # ====================================================
-                self.set_state(BotState.REELING)
-                cancel_roi = self.config.get("screen", {}).get("cancel_btn_roi")
-                self.set_overlay(cancel_roi, "#ff79c6", "🎣 ดึงปลา / เช็กปุ่ม Cancel (State 3)")
-                reel_hold_duration = self.calculate_reel_duration()
-                self.log(f"🎣 [State 3: Reeling] เริ่มกดคลิกซ้ายค้างดึงปลา ({reel_hold_duration}s) + Micro-Jitter ทุก 120ms...")
-
-                start_reel = time.perf_counter()
-                last_jitter = time.time()
-
-                # Reeling hold loop
-                while self.is_running and (time.perf_counter() - start_reel) < reel_hold_duration:
-                    now = time.time()
-                    elapsed_reel = time.perf_counter() - start_reel
-                    reel_pct = min(100.0, (elapsed_reel / reel_hold_duration) * 100.0)
-                    self.set_progress(reel_pct, f"กำลังกดค้างดึงปลา: {elapsed_reel:.1f}s / {reel_hold_duration:.1f}s (Micro-Jitter 120ms)")
-
-                    if now - last_jitter >= jitter_interval:
-                        InputSimulator.send_micro_jitter()
-                        last_jitter = now
-                    time.sleep(scan_interval)
-
-                cancel_extension_enabled = features.get("cancel_extension_enabled", True)
-                cancel_extension_max = float(timings.get("reeling_cancel_extension_max_sec", 35.0) or 35.0)
-
-                if cancel_extension_enabled and self.is_running:
-                    # ====================================================
-                    # Mode A: Cancel Extension Enabled (Keep reeling until fish surfaces)
-                    # ====================================================
-                    if self.detector.detect_red_cancel_button():
-                        self.log(f"🔄 [Cancel Auto-Extension] ครบเวลา {reel_hold_duration:.1f}s แต่ปุ่ม Cancel ยังคงอยู่ -> กดค้างดึงต่อไปเรื่อยๆ จนกว่าปุ่ม Cancel จะหายไป...")
-                        ext_start = time.perf_counter()
-                        while self.is_running and (time.perf_counter() - ext_start) < cancel_extension_max:
-                            now = time.time()
-                            elapsed_ext = time.perf_counter() - ext_start
-                            self.set_progress(100.0, f"กำลังกดดึงต่ออัตโนมัติ: +{elapsed_ext:.1f}s (รอปุ่ม Cancel หายไป)...")
-
-                            if now - last_jitter >= jitter_interval:
-                                InputSimulator.send_micro_jitter()
-                                last_jitter = now
-
-                            # Check if Cancel button has disappeared
-                            if not self.detector.detect_red_cancel_button():
-                                time.sleep(0.02)
-                                if not self.detector.detect_red_cancel_button():
-                                    self.log(f"✨ [Cancel Auto-Extension] ปุ่ม Cancel หายไปแล้ว (+{elapsed_ext:.1f}s) -> ปลาลอยขึ้นสู่ผิวน้ำเรียบร้อย! ปล่อยเมาส์ทันที")
-                                    break
-                            time.sleep(scan_interval)
-
-                    InputSimulator.mouse_up()
-                    rod_cap = max(1, int(self.config.get("rod_stats", {}).get("capacity", 1) or 1))
-                    self.stats["fish_caught"] += rod_cap
-                    self.update_stats()
-                    self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบ 100% -> ส่ง MouseUp เรียบร้อย (+{rod_cap} ตัว รวม {self.stats['fish_caught']} ตัว)")
-
-                else:
-                    # ====================================================
-                    # Mode B: Cancel Extension Disabled (Release mouse at exact time, click Cancel if still present to loop back to State 1)
-                    # ====================================================
-                    InputSimulator.mouse_up()
-                    time.sleep(0.08)
-
-                    if self.is_running and self.detector.detect_red_cancel_button():
-                        self.log(f"🛑 [Fast Cancel Reset] ครบเวลาดึงปลา {reel_hold_duration:.1f}s แต่ปลายังไม่ขึ้นน้ำ (ปิดสวิตช์ Extension) -> คลิกปุ่ม Cancel เพื่อตัดสายและวนกลับไปเหวี่ยงเบ็ด State 1 ทันที!")
-                        self.set_progress(100.0, "🛑 กำลังคลิกปุ่ม Cancel เพื่อตัดสายเบ็ดและเริ่มเหวี่ยงใหม่...")
-                        InputSimulator.click_cancel_button(self.config)
-                        time.sleep(0.4)
-                        continue  # Loop back to STATE 1 immediately!
-                    else:
-                        rod_cap = max(1, int(self.config.get("rod_stats", {}).get("capacity", 1) or 1))
-                        self.stats["fish_caught"] += rod_cap
-                        self.update_stats()
-                        self.log(f"🎉 [State 3: Reeling Complete] ดึงปลาขึ้นสู่ผิวน้ำครบตามเวลา {reel_hold_duration:.1f}s (+{rod_cap} ตัว รวม {self.stats['fish_caught']} ตัว)")
+                reeling_success = self._execute_reeling_state(timings, features)
+                if not reeling_success:
+                    continue
 
                 # ====================================================
                 # STATE 4: LOOT & FAST RESET (1.9s Recast + Click-to-Dismiss)
                 # ====================================================
-                self.set_state(BotState.LOOT_RESET)
-                self.set_overlay(None)
-                self.log(f"⏳ [State 4: Loot & Reset] รอการ์ดแสดงผล ({recast_delay}s)... ส่งคลิกซ้าย 1 ครั้งเพื่อข้ามการ์ดและเตรียมเหวี่ยงเบ็ด")
-
-                time.sleep(0.5)
-
-                # Check global interrupt / Legendary popup
-                if self.check_global_interrupt():
-                    if not self.is_running:
-                        break
-
-                # Left Click at Safe Zone to dismiss notification cards
-                InputSimulator.move_to_safe_water_zone(self.config)
-                InputSimulator.click(duration=0.04)
-
-                remaining_recast = max(0.4, recast_delay - 0.5)
-                start_loot = time.time()
-                while time.time() - start_loot < remaining_recast:
-                    if not self.is_running:
-                        break
-                    remain = remaining_recast - (time.time() - start_loot)
-                    pct = min(100.0, ((remaining_recast - remain) / remaining_recast) * 100.0)
-                    self.set_progress(pct, f"คลิกข้ามการ์ดปลาแล้ว -> เตรียมเหวี่ยงเบ็ด: {remain:.1f}s...")
-                    time.sleep(0.05)
+                self._execute_loot_state(recast_delay)
 
         except Exception as e:
             err_msg = traceback.format_exc()
@@ -619,3 +643,28 @@ class FishingBot:
             if self.state != BotState.PAUSED_INVENTORY_FULL:
                 self.set_state(BotState.IDLE)
                 self.set_progress(0, "ระบบหยุดการทำงาน")
+
+    def _execute_loot_state(self, recast_delay):
+        self.set_state(BotState.LOOT_RESET)
+        self.set_overlay(None)
+        self.log(f"⏳ [State 4: Loot & Reset] รอการ์ดแสดงผล ({recast_delay}s)... ส่งคลิกซ้าย 1 ครั้งเพื่อข้ามการ์ดและเตรียมเหวี่ยงเบ็ด")
+
+        time.sleep(0.5)
+
+        # Check global interrupt / Legendary popup
+        if self.check_global_interrupt():
+            return
+
+        # Left Click at Safe Zone to dismiss notification cards
+        InputSimulator.move_to_safe_water_zone(self.config)
+        InputSimulator.click(duration=0.04)
+
+        remaining_recast = max(0.4, recast_delay - 0.5)
+        start_loot = time.time()
+        while time.time() - start_loot < remaining_recast:
+            if not self.is_running:
+                break
+            remain = remaining_recast - (time.time() - start_loot)
+            pct = min(100.0, ((remaining_recast - remain) / remaining_recast) * 100.0)
+            self.set_progress(pct, f"คลิกข้ามการ์ดปลาแล้ว -> เตรียมเหวี่ยงเบ็ด: {remain:.1f}s...")
+            time.sleep(0.05)

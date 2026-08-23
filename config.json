@@ -45,16 +45,16 @@
       "h_ratio": 0.08
     },
     "cancel_btn_roi": {
-      "x_ratio": 0.42,
-      "y_ratio": 0.83,
-      "w_ratio": 0.16,
-      "h_ratio": 0.11
+      "x_ratio": 0.4547,
+      "y_ratio": 0.7963,
+      "w_ratio": 0.0906,
+      "h_ratio": 0.0519
     }
   },
   "rod_stats": {
     "depth": 380.0,
     "strength": 117.0,
-    "capacity": 10
+    "capacity": 9
   },
   "timings": {
     "idle_delay_sec": 0.4,
@@ -62,7 +62,7 @@
     "charge_backup_sec": 1.4,
     "cast_poll_interval_sec": 0.005,
     "cast_settle_delay_sec": 1.0,
-    "sinking_timeout_sec": 36.7,
+    "sinking_timeout_sec": 25.0,
     "bite_reaction_delay_ms": 350,
     "reel_hold_duration_sec": 5.9,
     "reeling_cancel_extension_sec": 5.0,
