@@ -97,7 +97,8 @@
     "dynamic_green_detection": true,
     "lightning_flash_rejection": true,
     "double_check_enabled": true,
-    "failsafe_auto_recovery": true
+    "failsafe_auto_recovery": true,
+    "screen_overlay_hud": false
   },
   "hotkeys": {
     "start": "F6",
