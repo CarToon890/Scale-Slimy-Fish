@@ -395,9 +395,7 @@ class FishingBot:
                 self.set_overlay(cast_roi, "#50fa7b", "🎣 สแกนเกจ Power Bar (State 1)")
                 self.log("🎣 [State 1: Casting] ส่ง MouseDown ชาร์จเกจพลังงาน (Min Gate 450ms)...")
                 self.stats["casts_count"] += 1
-                self.update_stats()
-
-                self._execute_casting_state()
+                is_perfect = self._execute_casting_state()
 
                 # ====================================================
                 # STATE 2: SINKING (Dual Anchor '!'/Hold | Dynamic Timeout)
@@ -411,6 +409,11 @@ class FishingBot:
                 if self.detector.is_power_bar_present():
                     self.log("⚠️ [State 2 Validation] ตรวจพบ Power Bar ยังอยู่บนหน้าจอ (การเหวี่ยงเบ็ดไม่สำเร็จ) -> ส่ง MouseUp เคลียร์สถานะ และวนกลับไปเหวี่ยงเบ็ด State 1 ทันที")
                     InputSimulator.mouse_up()
+                    if self.stats["casts_count"] > 0:
+                        self.stats["casts_count"] -= 1
+                    if is_perfect and self.stats["perfect_casts"] > 0:
+                        self.stats["perfect_casts"] -= 1
+                    self.update_stats()
                     time.sleep(0.4)
                     continue
 
@@ -434,6 +437,11 @@ class FishingBot:
                     if elapsed_sink <= 1.5 and self.detector.is_power_bar_present():
                         self.log("⚠️ [State 2 Validation] ตรวจพบ Power Bar ยังคงค้างอยู่ -> ส่ง MouseUp และวนกลับไปเหวี่ยงเบ็ด State 1 ทันที")
                         InputSimulator.mouse_up()
+                        if self.stats["casts_count"] > 0:
+                            self.stats["casts_count"] -= 1
+                        if is_perfect and self.stats["perfect_casts"] > 0:
+                            self.stats["perfect_casts"] -= 1
+                        self.update_stats()
                         time.sleep(0.4)
                         cast_failed = True
                         break

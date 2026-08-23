@@ -413,13 +413,13 @@ class FishingBotApp:
         stats_mini.pack(fill="x", pady=(2, 0))
 
         self.lbl_casts = tk.Label(stats_mini, text="🎣 0", font=("Segoe UI", 8, "bold"), fg=ModernColors.TEXT_MAIN, bg=ModernColors.CARD_BG)
-        self.lbl_casts.pack(side="left", padx=(0, 6))
+        self.lbl_casts.pack(side="left", padx=(0, 4))
 
-        self.lbl_fish = tk.Label(stats_mini, text="🐟 0 ตัว", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_GREEN, bg=ModernColors.CARD_BG)
-        self.lbl_fish.pack(side="left", padx=6)
+        self.lbl_fish = tk.Label(stats_mini, text="🐟 0 (0%)", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_GREEN, bg=ModernColors.CARD_BG)
+        self.lbl_fish.pack(side="left", padx=4)
 
-        self.lbl_perfect = tk.Label(stats_mini, text="✨ 0", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_YELLOW, bg=ModernColors.CARD_BG)
-        self.lbl_perfect.pack(side="left", padx=6)
+        self.lbl_perfect = tk.Label(stats_mini, text="✨ 0 (0%)", font=("Segoe UI", 8, "bold"), fg=ModernColors.ACCENT_YELLOW, bg=ModernColors.CARD_BG)
+        self.lbl_perfect.pack(side="left", padx=4)
 
         self.lbl_uptime = tk.Label(stats_mini, text="⏱️ 00:00:00", font=("Segoe UI", 8), fg=ModernColors.TEXT_MUTED, bg=ModernColors.CARD_BG)
         self.lbl_uptime.pack(side="right")
@@ -1232,12 +1232,15 @@ class FishingBotApp:
             perfect = stats.get('perfect_casts', 0)
             uptime = stats.get('uptime_seconds', 0)
 
-            self.lbl_casts.config(text=f"🎣 {casts}")
-            self.lbl_fish.config(text=f"🐟 {fish} ตัว")
-            self.lbl_perfect.config(text=f"✨ {perfect}")
+            fish_pct = int(round((fish / max(1, casts)) * 100.0)) if casts > 0 else 0
+            perf_pct = int(round((perfect / max(1, casts)) * 100.0)) if casts > 0 else 0
 
-            perf_pct = round((perfect / max(1, casts)) * 100.0, 1)
-            self.lbl_perfect_pct.config(text=f"{perf_pct:.1f}%")
+            self.lbl_casts.config(text=f"🎣 {casts}")
+            self.lbl_fish.config(text=f"🐟 {fish} ({fish_pct}%)")
+            self.lbl_perfect.config(text=f"✨ {perfect} ({perf_pct}%)")
+
+            if hasattr(self, "lbl_perfect_pct"):
+                self.lbl_perfect_pct.config(text=f"{perf_pct}%")
 
             if uptime > 5 and fish > 0:
                 rate = round((fish / (uptime / 3600.0)), 1)
