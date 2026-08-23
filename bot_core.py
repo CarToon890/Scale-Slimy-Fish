@@ -360,9 +360,18 @@ class FishingBot:
                 self._execute_casting_state()
 
                 # ====================================================
-                # STATE 2: SINKING (Dual Anchor '!'/Hold | Dynamic 18.0s+ Timeout)
+                # STATE 2: SINKING (Dual Anchor '!'/Hold | Dynamic Timeout)
                 # ====================================================
                 self.set_state(BotState.SINKING)
+
+                # Pre-validation: Check if Power Bar is still on screen (Cast Failed -> Loop back to State 1)
+                time.sleep(0.2)
+                if self.detector.is_power_bar_present():
+                    self.log("⚠️ [State 2 Validation] ตรวจพบ Power Bar ยังอยู่บนหน้าจอ (การเหวี่ยงเบ็ดไม่สำเร็จ) -> ส่ง MouseUp เคลียร์สถานะ และวนกลับไปเหวี่ยงเบ็ด State 1 ทันที")
+                    InputSimulator.mouse_up()
+                    time.sleep(0.4)
+                    continue
+
                 sinking_timeout = self.calculate_sinking_timeout()
                 depth_val = self.config.get("rod_stats", {}).get("depth", 330)
                 self.log(f"🌊 [State 2: Sinking] สายเบ็ดกำลังจมลงสู่ใต้ทะเล (Depth: {depth_val}m | Timeout: {sinking_timeout}s)...")
@@ -370,10 +379,21 @@ class FishingBot:
                 start_sink = time.time()
                 last_interrupt_check = 0.0
                 hooked = False
+                cast_failed = False
                 last_score = 0.0
 
                 while time.time() - start_sink < sinking_timeout:
                     if not self.is_running:
+                        break
+
+                    elapsed_sink = time.time() - start_sink
+
+                    # Early Sinking Validation: Check if Power Bar is still stuck on screen
+                    if elapsed_sink <= 1.5 and self.detector.is_power_bar_present():
+                        self.log("⚠️ [State 2 Validation] ตรวจพบ Power Bar ยังคงค้างอยู่ -> ส่ง MouseUp และวนกลับไปเหวี่ยงเบ็ด State 1 ทันที")
+                        InputSimulator.mouse_up()
+                        time.sleep(0.4)
+                        cast_failed = True
                         break
 
                     # Check Global Interrupt periodically (every 1.5s) to maximize loop FPS
@@ -384,7 +404,6 @@ class FishingBot:
                             if not self.is_running:
                                 break
 
-                    elapsed_sink = time.time() - start_sink
                     sink_pct = min(100.0, (elapsed_sink / sinking_timeout) * 100.0)
                     
                     is_detected, details = self.detector.detect_hold_anchor()
@@ -409,6 +428,9 @@ class FishingBot:
 
                 if not self.is_running:
                     break
+
+                if cast_failed:
+                    continue
 
                 if not hooked:
                     self.consecutive_sinking_timeouts += 1

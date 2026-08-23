@@ -408,6 +408,38 @@ class VisionDetector:
         else:
             return self._detect_green_peak_auto(frame)
 
+    def is_power_bar_present(self) -> bool:
+        mode = self.config.get("screen", {}).get("detection_mode", "auto")
+        if mode == "auto":
+            frame = self.capture_auto_cast_area()
+        else:
+            frame = self.capture_cast_bar()
+
+        if frame is None or frame.size == 0:
+            return False
+
+        if self.config.get("features", {}).get("lightning_flash_rejection", True) and self.is_lightning_flash(frame):
+            return False
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        lower_g = np.array(self.config.get("thresholds", {}).get("cast_lower_green", [35, 120, 100]), dtype=np.uint8)
+        upper_g = np.array(self.config.get("thresholds", {}).get("cast_upper_green", [85, 255, 255]), dtype=np.uint8)
+        mask = cv2.inRange(hsv, lower_g, upper_g)
+        filtered_mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.kernel_3x3)
+        green_pixels = cv2.countNonZero(filtered_mask)
+
+        if mode == "auto":
+            contours, _ = cv2.findContours(filtered_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                x, y, w, h = cv2.boundingRect(cnt)
+                if area >= 60 and w <= 80:
+                    return True
+            return green_pixels >= 80
+        else:
+            total_pixels = frame.shape[0] * frame.shape[1]
+            return (green_pixels / max(1, total_pixels)) >= 0.05
+
     # ----------------------------------------------------
     # DUAL ANCHOR: ORIGINAL FAST TEMPLATE MATCH + RED '!'
     # ----------------------------------------------------
