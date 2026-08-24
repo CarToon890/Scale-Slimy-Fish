@@ -62,7 +62,7 @@
     "charge_backup_sec": 1.4,
     "cast_poll_interval_sec": 0.005,
     "cast_settle_delay_sec": 1.0,
-    "sinking_timeout_sec": 25.0,
+    "sinking_timeout_sec": 36.7,
     "bite_reaction_delay_ms": 350,
     "reel_hold_duration_sec": 5.9,
     "reeling_cancel_extension_sec": 5.0,
